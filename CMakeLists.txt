@@ -3,11 +3,11 @@ set(CMAKE_CXX_FLAGS "-std=c++0x ${CMAKE_CXX_FLAGS}")
 cmake_minimum_required(VERSION 2.8.3)
 project(s8_explorer)
 
-find_package(catkin REQUIRED COMPONENTS roscpp geometry_msgs s8_msgs s8_common_node s8_turner)
+find_package(catkin REQUIRED COMPONENTS roscpp geometry_msgs s8_msgs s8_common_node s8_turner s8_motor_controller s8_wall_follower_controller)
 
 catkin_package(
   DEPENDS
-  CATKIN_DEPENDS roscpp s8_msgs geometry_msgs s8_common_node s8_turner
+  CATKIN_DEPENDS roscpp s8_msgs geometry_msgs s8_common_node s8_turner s8_motor_controller s8_wall_follower_controller
 )
 
 include_directories(

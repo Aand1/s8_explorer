@@ -18,11 +18,15 @@
   <build_depend>geometry_msgs</build_depend>
   <build_depend>s8_common_node</build_depend>
   <build_depend>s8_turner</build_depend>
+  <build_depend>s8_motor_controller</build_depend>
+  <build_depend>s8_wall_follower_controller</build_depend>
 
   <run_depend>roscpp</run_depend>
   <run_depend>s8_msgs</run_depend>
   <run_depend>geometry_msgs</run_depend>
   <run_depend>s8_common_node</run_depend>
   <run_depend>s8_turner</run_depend>
+  <run_depend>s8_motor_controller</run_depend>
+  <run_depend>s8_wall_follower_controller</run_depend>
 
 </package>
