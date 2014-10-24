@@ -1,0 +1,28 @@
+<package>
+ <name>s8_explorer</name>
+  <version>0.0.0</version>
+  <description>
+    Node to explore the world. Will use the turner node and wall following node to do that.
+  </description>
+  <license>BSD</license>
+
+  <url type="website">http://wiki.ros.org/ras_lab1_motors</url>
+
+  <author email="lwiener@kth.se">Lucas</author>
+  <maintainer email="lwiener@kth.se">Lucas</maintainer>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>roscpp</build_depend>
+  <build_depend>s8_msgs</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>s8_common_node</build_depend>
+  <build_depend>s8_turner</build_depend>
+
+  <run_depend>roscpp</run_depend>
+  <run_depend>s8_msgs</run_depend>
+  <run_depend>geometry_msgs</run_depend>
+  <run_depend>s8_common_node</run_depend>
+  <run_depend>s8_turner</run_depend>
+
+</package>
