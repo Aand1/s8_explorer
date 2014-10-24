@@ -7,7 +7,7 @@
 
 #define NODE_NAME		"s8_explorer_node"
 
-#define ACTION_TURN		"/s8_turner/turn"
+#define ACTION_TURN		"/s8/turn"
 
 class Explorer : public s8::Node {
 	actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
