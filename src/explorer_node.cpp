@@ -64,19 +64,6 @@ private:
         s8_wall_follower_controller::FollowWallGoal goal;
         goal.wall_to_follow = side;
         follow_wall_action.sendGoal(goal, boost::bind(&Explorer::follow_wall_done_callback, this, _1, _2), follow_wall_client::SimpleActiveCallback(), follow_wall_client::SimpleFeedbackCallback());
-
-        /*bool finised_before_timeout = follow_wall_action.waitForResult(ros::Duration(30.0));
-
-        if(finised_before_timeout) {
-            actionlib::SimpleClientGoalState state = follow_wall_action.getState();
-            if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
-                ROS_INFO("Follow wall action succeeded. Reason: %d", follow_wall_action.getResult()->reason);
-            } else {
-                ROS_INFO("Follow wall action finished with unknown state: %s", state.toString().c_str());
-            }
-        } else {
-            ROS_WARN("Follow wall action timed out.");
-        }*/
     }
 
     void follow_wall_done_callback(const actionlib::SimpleClientGoalState& state, const s8_wall_follower_controller::FollowWallResultConstPtr & result) {
