@@ -23,7 +23,67 @@
 #define ACTION_STOP                                 "/s8_motor_controller/stop"
 #define ACTION_FOLLOW_WALL                          "/s8/follow_wall"
 
+#define WALL_FOLLOW_REASON_TIMEOUT                   1
+#define WALL_FOLLOW_REASON_OUT_OF_RANGE              1 << 1
+#define WALL_FOLLOW_REASON_PREEMPTED                 1 << 2
+
 typedef actionlib::SimpleActionClient<s8_wall_follower_controller::FollowWallAction> follow_wall_client;
+
+class StateManager {
+public:
+    enum State {
+        STILL,
+        STOPPING,
+        STOPPING_TIMED_OUT,
+        FOLLOWING_WALL,
+        FOLLOWING_WALL_TIMED_OUT,
+        FOLLOWING_WALL_OUT_OF_RANGE,
+        FOLLOWING_WALL_PREEMPTED,
+        TURNING,
+        TURNING_TIMED_OUT,
+    };
+
+    State state;
+    std::function<void(State, State)> on_state_changed;
+
+public:
+    StateManager(State state, std::function<void(State, State)> on_state_changed) : state(state), on_state_changed(on_state_changed) {}
+
+    void set_state(State new_state) {
+        State previous_state = state;
+        state = new_state;
+        on_state_changed(previous_state, new_state);
+    }
+
+    State get_state() {
+        return state;
+    }
+
+    std::string state_to_string(State s) {
+        switch(s) {
+        case State::STILL:
+            return "STILL";
+        case State::STOPPING:
+            return "STOPPING";
+        case State::STOPPING_TIMED_OUT:
+            return "STOPPING_TIMED_OUT";
+        case State::FOLLOWING_WALL:
+            return "FOLLOWING_WALL";
+        case State::FOLLOWING_WALL_TIMED_OUT:
+            return "FOLLOWING_WALL_TIMED_OUT";
+        case State::FOLLOWING_WALL_OUT_OF_RANGE:
+            return "FOLLOWING_WALL_OUT_OF_RANGE";
+        case State::FOLLOWING_WALL_PREEMPTED:
+            return "FOLLOWING_WALL_PREEMPTED";
+        case State::TURNING:
+            return "TURNING";
+        case State::TURNING_TIMED_OUT:
+            return "TURNING_TIMED_OUT";
+        }
+
+        return "UNKNOWN";
+    }
+};
 
 class Explorer : public s8::Node {
     ros::Subscriber distances_subscriber;
@@ -34,9 +94,10 @@ class Explorer : public s8::Node {
     double front_distance_treshold_far;
     double front_distance_stop;
     bool turning;
+    StateManager state_manager;
 
 public:
-    Explorer() : turning(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true) {
+    Explorer() : turning(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 0, &Explorer::distances_callback, this);
@@ -54,12 +115,48 @@ public:
         ROS_INFO("Connected to follow_wall action server!");
 
         follow_wall(1);
-        //turn(90);
     }
 
 private:
+    void on_state_changed(StateManager::State previous_state, StateManager::State current_state) {
+        typedef StateManager::State State;
+
+        ROS_INFO("State transition: %s -> %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str());
+    
+        ros::Duration duration(5);
+
+        switch(current_state) {
+        case State::FOLLOWING_WALL_PREEMPTED:
+            //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
+            
+            stop();
+            duration.sleep();
+            turn(90);
+            duration.sleep();
+            follow_wall(1);
+            break;
+        case State::FOLLOWING_WALL_OUT_OF_RANGE:
+            //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
+
+            stop();
+            break;
+        case State::FOLLOWING_WALL_TIMED_OUT:
+            //Wall following timed out. This means that the robot has been following the wall for long time, but the is still more wall to follow.
+            
+            //Keep following wall since there is no other reason to do something else.
+            follow_wall(1);
+            break;
+        case State::TURNING_TIMED_OUT:
+            break;
+        case State::STOPPING_TIMED_OUT:
+            break;
+        case State::STILL:
+            break;
+        }
+    }
+
     void follow_wall(int side) {
-        ROS_INFO("Following %s wall...", side == -1 ? "left" : "right");
+        state_manager.set_state(StateManager::State::FOLLOWING_WALL);
 
         s8_wall_follower_controller::FollowWallGoal goal;
         goal.wall_to_follow = side;
@@ -67,26 +164,26 @@ private:
     }
 
     void follow_wall_done_callback(const actionlib::SimpleClientGoalState& state, const s8_wall_follower_controller::FollowWallResultConstPtr & result) {
-        if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
-            ROS_INFO("Follow wall action succeeded. Reason: %d", follow_wall_action.getResult()->reason);
-            stop();
-            ros::Duration duration(5);
-            duration.sleep();
-            turn(90);
-            duration.sleep();
-            follow_wall(1);
-        } else if(state == actionlib::SimpleClientGoalState::ABORTED) {
-            ROS_WARN("Follow wall action aborted (timeout).");
-            //TODO: Should we stop here before doing something else?
-            //Keep following wall since there is no other reason to do something else.
-            follow_wall(1);
-        } else {
-            ROS_WARN("Follow wall action finished with unknown state: %s", state.toString().c_str());
+        int reason = follow_wall_action.getResult()->reason;
+
+        switch(reason) {
+        case WALL_FOLLOW_REASON_OUT_OF_RANGE:
+            state_manager.set_state(StateManager::State::FOLLOWING_WALL_OUT_OF_RANGE);
+            break;
+        case WALL_FOLLOW_REASON_PREEMPTED:
+            state_manager.set_state(StateManager::State::FOLLOWING_WALL_PREEMPTED);
+            break;
+        case WALL_FOLLOW_REASON_TIMEOUT:
+            state_manager.set_state(StateManager::State::FOLLOWING_WALL_TIMED_OUT);
+            break;
+        default:
+            ROS_FATAL("Unknown wall following action goal reason: %d", reason);
         }
     }
 
     void turn(int degrees) {
         ROS_INFO("Turning %d...", degrees);
+        state_manager.set_state(StateManager::State::TURNING);
 
         turning = true;
         s8_turner::TurnGoal goal;
@@ -99,8 +196,10 @@ private:
             actionlib::SimpleClientGoalState state = turn_action.getState();
             if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
                 ROS_INFO("Turn action succeeded. Degrees turn: %d", turn_action.getResult()->degrees);
+                state_manager.set_state(StateManager::State::STILL);
             } else {
                 ROS_INFO("Turn action finished with unknown state: %s", state.toString().c_str());
+                state_manager.set_state(StateManager::State::TURNING_TIMED_OUT);
             }
         } else {
             ROS_WARN("Turn action timed out.");
@@ -111,6 +210,7 @@ private:
 
     void stop() {
         ROS_INFO("Stopping...");
+        state_manager.set_state(StateManager::State::STOPPING);
 
         s8_motor_controller::StopGoal goal;
         goal.stop = true;
@@ -121,8 +221,10 @@ private:
         if(finised_before_timeout) {
             actionlib::SimpleClientGoalState state = stop_action.getState();
             ROS_INFO("Stop action finished. %s", state.toString().c_str());
+            state_manager.set_state(StateManager::State::STILL);
         } else {
             ROS_WARN("Stop action timed out.");
+            state_manager.set_state(StateManager::State::STOPPING_TIMED_OUT);
         }
     }
 
