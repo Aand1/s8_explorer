@@ -83,7 +83,7 @@ private:
         if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
             ROS_INFO("Follow wall action succeeded. Reason: %d", follow_wall_action.getResult()->reason);
         } else {
-            ROS_INFO("Follow wall action finished with unknown state: %s", state.toString().c_str());
+            ROS_WARN("Follow wall action finished with unknown state: %s", state.toString().c_str());
         }
 
         stop();
@@ -152,7 +152,7 @@ private:
             ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
 
             if(std::abs(front_left) <= front_distance_stop || std::abs(front_right) <= front_distance_stop) {
-                ROS_INFO("Too close to wall! Stopping...");
+                ROS_INFO("Too close to wall!");
                 //TODO: Need to cancel wall follower if running.
                 follow_wall_action.cancelGoal();
             }
