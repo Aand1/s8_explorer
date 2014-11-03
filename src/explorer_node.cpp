@@ -7,11 +7,11 @@
 #include <s8_wall_follower_controller/FollowWallAction.h>
 #include <s8_msgs/IRDistances.h>
 
-#define NODE_NAME       "s8_explorer_node"
+#define NODE_NAME                                   "s8_explorer_node"
 
-#define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR "front_distance_treshold_near"
-#define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR  "front_distance_treshold_far"
-#define PARAM_NAME_FRONT_DISTANCE_STOP          "front_distance_stop"
+#define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR     "front_distance_treshold_near"
+#define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR      "front_distance_treshold_far"
+#define PARAM_NAME_FRONT_DISTANCE_STOP              "front_distance_stop"
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
