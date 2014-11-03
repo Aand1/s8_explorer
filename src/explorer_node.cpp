@@ -69,16 +69,20 @@ private:
     void follow_wall_done_callback(const actionlib::SimpleClientGoalState& state, const s8_wall_follower_controller::FollowWallResultConstPtr & result) {
         if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
             ROS_INFO("Follow wall action succeeded. Reason: %d", follow_wall_action.getResult()->reason);
+            stop();
+            ros::Duration duration(5);
+            duration.sleep();
+            turn(90);
+            duration.sleep();
+            follow_wall(1);
+        } else if(state == actionlib::SimpleClientGoalState::ABORTED) {
+            ROS_WARN("Follow wall action aborted (timeout).");
+            //TODO: Should we stop here before doing something else?
+            //Keep following wall since there is no other reason to do something else.
+            follow_wall(1);
         } else {
             ROS_WARN("Follow wall action finished with unknown state: %s", state.toString().c_str());
         }
-
-        stop();
-        ros::Duration duration(5);
-        duration.sleep();
-        turn(90);
-        duration.sleep();
-        follow_wall(1);
     }
 
     void turn(int degrees) {
