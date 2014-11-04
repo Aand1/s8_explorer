@@ -124,9 +124,10 @@ class Explorer : public s8::Node {
     double right_front;
     double go_straight_velocity;
     StateManager state_manager;
+    bool should_stop_go_straight;
 
 public:
-    Explorer() : turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall_side(0) {
+    Explorer() : should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall_side(0) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
@@ -146,7 +147,7 @@ public:
 
         ROS_INFO("");
 
-        follow_wall(WALL_FOLLOW_SIDE_RIGHT);
+        follow_wall(WALL_FOLLOW_SIDE_LEFT);
     }
 
 private:
@@ -183,6 +184,8 @@ private:
                 });
 
                 stop();
+
+                ROS_INFO("get wall: %d", get_wall_to_follow());
             }
 
             //Now there is a wall to follow, so follow it.
@@ -277,9 +280,7 @@ private:
     }
 
     void distances_callback(const s8_msgs::IRDistances::ConstPtr & ir_distances) {
-        if(!is_following_wall()) {
-            return;
-        }
+        ROS_INFO("left wall: %s right wall: %s", is_left_wall_present() ? "true" : "false", is_right_wall_present() ? "true" : "false");
 
         front_left = ir_distances->front_left;
         front_right = ir_distances->front_right;
@@ -288,6 +289,10 @@ private:
         right_back = ir_distances->right_back;
         right_front = ir_distances->right_front;
 
+	    if(!is_following_wall() && !is_going_straight()) {
+            return;
+        }
+
         if(is_front_obstacle_present()) {
             //There is a wall in front of robot.
             ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
@@ -295,7 +300,11 @@ private:
             if(std::abs(front_left) <= front_distance_stop || std::abs(front_right) <= front_distance_stop) {
                 ROS_INFO("Too close to wall!");
                 //TODO: Need to cancel wall follower if running.
-                follow_wall_action.cancelGoal();
+		        if(is_following_wall()) {
+		            follow_wall_action.cancelGoal();
+                } else if(is_going_straight()) {
+                    should_stop_go_straight = true;
+                }
             }
         }
     }
@@ -319,7 +328,13 @@ private:
                 return WALL_FOLLOW_SIDE_RIGHT;
             }
         } else {
-            ROS_WARN("Invalid wall following state!");
+            if(is_right_wall_present()) {
+                //We used to follow left side and there is a right wall present. Follow that wall instead.
+                return WALL_FOLLOW_SIDE_RIGHT;
+            } else if(is_left_wall_present()) {
+                //We used to follow left side, there is no right wall to follow but the left side seem to be present again. Lets follow it again.
+                return WALL_FOLLOW_SIDE_LEFT;
+            }
         }
 
         return 0;
@@ -330,8 +345,10 @@ private:
         geometry_msgs::Twist twist;
         twist.linear.x = go_straight_velocity;
 
+        should_stop_go_straight = false;
+
         ros::Rate loop_rate(10);
-        while(condition()) {
+        while(condition() && ros::ok() && !should_stop_go_straight) {
             twist_publisher.publish(twist);
             loop_rate.sleep();
         }
@@ -346,11 +363,11 @@ private:
     }
 
     bool is_side_inside_treshold(double value) {
-        return is_inside_treshold(value, side_distance_treshold_near, side_distance_treshold_near);
+        return is_inside_treshold(value, side_distance_treshold_near, side_distance_treshold_far);
     }
 
     bool is_side_wall_present(double back, double front) {
-        return is_side_inside_treshold(left_back) && is_side_inside_treshold(left_front);
+        return is_side_inside_treshold(back) && is_side_inside_treshold(front);
     }
 
     bool is_left_wall_present() {
@@ -375,6 +392,10 @@ private:
 
     bool is_stopping() {
         return state_manager.get_state() == StateManager::State::STOPPING;
+    }
+
+    bool is_going_straight() {
+        return state_manager.get_state() == StateManager::State::GOING_STRAIGHT;
     }
 
     void init_params() {
