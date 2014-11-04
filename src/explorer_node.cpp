@@ -100,7 +100,7 @@ public:
     Explorer() : turning(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)) {
         init_params();
         print_params();
-        distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 0, &Explorer::distances_callback, this);
+        distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
 
         ROS_INFO("Waiting for turn action server...");
         turn_action.waitForServer();
@@ -113,6 +113,8 @@ public:
         ROS_INFO("Waiting for follow_wall action server...");
         follow_wall_action.waitForServer();
         ROS_INFO("Connected to follow_wall action server!");
+
+        ROS_INFO("");
 
         follow_wall(1);
     }
@@ -133,7 +135,8 @@ private:
             duration.sleep();
             turn(90);
             duration.sleep();
-            follow_wall(1);
+            ROS_INFO("DONE");
+            //follow_wall(1);
             break;
         case State::FOLLOWING_WALL_OUT_OF_RANGE:
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
@@ -147,6 +150,7 @@ private:
             follow_wall(1);
             break;
         case State::TURNING_TIMED_OUT:
+            stop();
             break;
         case State::STOPPING_TIMED_OUT:
             break;
@@ -182,7 +186,6 @@ private:
     }
 
     void turn(int degrees) {
-        ROS_INFO("Turning %d...", degrees);
         state_manager.set_state(StateManager::State::TURNING);
 
         turning = true;
@@ -195,21 +198,22 @@ private:
         if(finised_before_timeout) {
             actionlib::SimpleClientGoalState state = turn_action.getState();
             if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
-                ROS_INFO("Turn action succeeded. Degrees turn: %d", turn_action.getResult()->degrees);
                 state_manager.set_state(StateManager::State::STILL);
+            } else if (state == actionlib::SimpleClientGoalState::ABORTED) {
+                //Time out from turner node.
+                state_manager.set_state(StateManager::State::TURNING_TIMED_OUT);
             } else {
-                ROS_INFO("Turn action finished with unknown state: %s", state.toString().c_str());
+                ROS_WARN("Turn action finished with unknown state %s", state.toString().c_str());
                 state_manager.set_state(StateManager::State::TURNING_TIMED_OUT);
             }
         } else {
-            ROS_WARN("Turn action timed out.");
+            state_manager.set_state(StateManager::State::TURNING_TIMED_OUT);
         }
 
         turning = false;
     }
 
     void stop() {
-        ROS_INFO("Stopping...");
         state_manager.set_state(StateManager::State::STOPPING);
 
         s8_motor_controller::StopGoal goal;
@@ -220,10 +224,13 @@ private:
 
         if(finised_before_timeout) {
             actionlib::SimpleClientGoalState state = stop_action.getState();
-            ROS_INFO("Stop action finished. %s", state.toString().c_str());
-            state_manager.set_state(StateManager::State::STILL);
+            if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
+                state_manager.set_state(StateManager::State::STILL);
+            } else {
+                ROS_INFO("Stop action finished with unknown state: %s", state.toString().c_str());
+                state_manager.set_state(StateManager::State::STOPPING_TIMED_OUT);
+            }
         } else {
-            ROS_WARN("Stop action timed out.");
             state_manager.set_state(StateManager::State::STOPPING_TIMED_OUT);
         }
     }
