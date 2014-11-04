@@ -6,6 +6,7 @@
 #include <s8_motor_controller/StopAction.h>
 #include <s8_wall_follower_controller/FollowWallAction.h>
 #include <s8_msgs/IRDistances.h>
+#include <geometry_msgs/Twist.h>
 
 #define NODE_NAME                                   "s8_explorer_node"
 
@@ -14,15 +15,18 @@
 #define PARAM_NAME_FRONT_DISTANCE_STOP              "front_distance_stop"
 #define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR      "side_distance_treshold_near"
 #define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR       "side_distance_treshold_far"
+#define PARAM_NAME_GO_STRAIGHT_VELOCITY             "go_straight_velocity"
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
 #define PARAM_DEFAULT_FRONT_DISTANCE_STOP           0.25
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR   0.04
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.2
+#define PARAM_DEFAULT_GO_STRAIGHT_VELOCITY          0.2
 
 
 #define TOPIC_DISTANCES                             "/s8/ir_distances"
+#define TOPIC_TWIST                                 "/s8/twist"
 #define ACTION_TURN                                 "/s8/turn"
 #define ACTION_STOP                                 "/s8_motor_controller/stop"
 #define ACTION_FOLLOW_WALL                          "/s8/follow_wall"
@@ -53,6 +57,7 @@ public:
         FOLLOWING_WALL_PREEMPTED,
         TURNING,
         TURNING_TIMED_OUT,
+        GOING_STRAIGHT
     };
 
     State state;
@@ -91,6 +96,8 @@ public:
             return "TURNING";
         case State::TURNING_TIMED_OUT:
             return "TURNING_TIMED_OUT";
+        case State::GOING_STRAIGHT:
+            return "GOING_STRAIGHT";
         }
 
         return "UNKNOWN";
@@ -99,6 +106,7 @@ public:
 
 class Explorer : public s8::Node {
     ros::Subscriber distances_subscriber;
+    ros::Publisher twist_publisher;
     actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
     follow_wall_client follow_wall_action;
@@ -114,6 +122,7 @@ class Explorer : public s8::Node {
     double left_front;
     double right_back;
     double right_front;
+    double go_straight_velocity;
     StateManager state_manager;
 
 public:
@@ -121,6 +130,7 @@ public:
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
+        twist_publisher = nh.advertise<geometry_msgs::Twist>(TOPIC_TWIST, 1);
 
         ROS_INFO("Waiting for turn action server...");
         turn_action.waitForServer();
@@ -159,38 +169,24 @@ private:
 
             stop();
 
-            int follow_side = 0;
-
-            //Check if there is a wall on the opposite side.
-            if(following_wall_side == WALL_FOLLOW_SIDE_LEFT) {
-                if(is_right_wall_present()) {
-                    //We used to follow left side and there is a right wall present. Follow that wall instead.
-                    follow_side = WALL_FOLLOW_SIDE_RIGHT;
-                } else if(is_left_wall_present()) {
-                    //We used to follow left side, there is no right wall to follow but the left side seem to be present again. Lets follow it again.
-                    follow_side = WALL_FOLLOW_SIDE_LEFT;
-                }
-            } else if(following_wall_side == WALL_FOLLOW_SIDE_RIGHT) {
-                if(is_left_wall_present()) {
-                    //We used to follow right side and there is a left wall present. Follow that wall instead.
-                    follow_side = WALL_FOLLOW_SIDE_LEFT;
-                } else if(is_right_wall_present()) {
-                    //We used to follow right side, there is no left wall to follow but the right side seem to be present again. Lets follow it again.
-                    follow_side = WALL_FOLLOW_SIDE_RIGHT;
-                }
-            } else {
-                ROS_WARN("Invalid wall following state!");
-            }
-
-            if(follow_side != 0) {
-                //There is a side to follow. Follow it.
-                follow_wall(follow_side);
-            } else {
+            //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
+            int follow_side;
+            while((follow_side = get_wall_to_follow()) == 0) {
                 //No walls in range. Just stop for now.
                 //TODO: Should do something else in the future.
                 stop();
-                ROS_INFO("I dont know what to do :)");
+
+                ROS_INFO("I dont know what to do, so I'm just going forward!");
+
+                go_straight([this]() {
+                    return !is_left_wall_present() && !is_right_wall_present(); //TODO: What if obstacle ahead?
+                });
+
+                stop();
             }
+
+            //Now there is a wall to follow, so follow it.
+            follow_wall(follow_side);
 
         } else if(current_state == State::FOLLOWING_WALL_TIMED_OUT) {
             //Wall following timed out. This means that the robot has been following the wall for long time, but the is still more wall to follow.
@@ -304,6 +300,43 @@ private:
         }
     }
 
+    int get_wall_to_follow() {
+        //Check if there is a wall on the opposite side.
+        if(following_wall_side == WALL_FOLLOW_SIDE_LEFT) {
+            if(is_right_wall_present()) {
+                //We used to follow left side and there is a right wall present. Follow that wall instead.
+                return WALL_FOLLOW_SIDE_RIGHT;
+            } else if(is_left_wall_present()) {
+                //We used to follow left side, there is no right wall to follow but the left side seem to be present again. Lets follow it again.
+                return WALL_FOLLOW_SIDE_LEFT;
+            }
+        } else if(following_wall_side == WALL_FOLLOW_SIDE_RIGHT) {
+            if(is_left_wall_present()) {
+                //We used to follow right side and there is a left wall present. Follow that wall instead.
+                return WALL_FOLLOW_SIDE_LEFT;
+            } else if(is_right_wall_present()) {
+                //We used to follow right side, there is no left wall to follow but the right side seem to be present again. Lets follow it again.
+                return WALL_FOLLOW_SIDE_RIGHT;
+            }
+        } else {
+            ROS_WARN("Invalid wall following state!");
+        }
+
+        return 0;
+    }
+
+    void go_straight(std::function<bool()> condition) {
+        state_manager.set_state(StateManager::State::GOING_STRAIGHT);
+        geometry_msgs::Twist twist;
+        twist.linear.x = go_straight_velocity;
+
+        ros::Rate loop_rate(10);
+        while(condition()) {
+            twist_publisher.publish(twist);
+            loop_rate.sleep();
+        }
+    }
+
     bool is_inside_treshold(double value, double treshold_near, double treshold_far) {
         return value > treshold_near && value < treshold_far;
     }
@@ -350,6 +383,7 @@ private:
         add_param(PARAM_NAME_FRONT_DISTANCE_STOP, front_distance_stop, PARAM_DEFAULT_FRONT_DISTANCE_STOP);
         add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR, side_distance_treshold_near, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR);
         add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR, side_distance_treshold_far, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR);
+        add_param(PARAM_NAME_GO_STRAIGHT_VELOCITY, go_straight_velocity, PARAM_DEFAULT_GO_STRAIGHT_VELOCITY);
     }
 };
 
