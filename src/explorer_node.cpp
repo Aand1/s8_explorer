@@ -27,9 +27,17 @@
 #define ACTION_STOP                                 "/s8_motor_controller/stop"
 #define ACTION_FOLLOW_WALL                          "/s8/follow_wall"
 
+#define ACTION_STOP_TIMEOUT                         30.0
+#define ACTION_TURN_TIMEOUT                         30.0
+
 #define WALL_FOLLOW_REASON_TIMEOUT                  1
 #define WALL_FOLLOW_REASON_OUT_OF_RANGE             1 << 1
 #define WALL_FOLLOW_REASON_PREEMPTED                1 << 2
+
+#define WALL_FOLLOW_SIDE_LEFT                       -1
+#define WALL_FOLLOW_SIDE_RIGHT                      1
+
+#define TURN_DEGREES_90                             90
 
 typedef actionlib::SimpleActionClient<s8_wall_follower_controller::FollowWallAction> follow_wall_client;
 
@@ -94,6 +102,7 @@ class Explorer : public s8::Node {
     actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
     follow_wall_client follow_wall_action;
+    int following_wall_side;
     double front_distance_treshold_near;
     double front_distance_treshold_far;
     double front_distance_stop;
@@ -108,7 +117,7 @@ class Explorer : public s8::Node {
     StateManager state_manager;
 
 public:
-    Explorer() : turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0) {
+    Explorer() : turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall_side(0) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
@@ -127,7 +136,7 @@ public:
 
         ROS_INFO("");
 
-        follow_wall(1);
+        follow_wall(WALL_FOLLOW_SIDE_RIGHT);
     }
 
 private:
@@ -138,39 +147,67 @@ private:
 
         ros::Duration duration(5);
 
-        switch(current_state) {
-        case State::FOLLOWING_WALL_PREEMPTED:
+        if(current_state == State::FOLLOWING_WALL_PREEMPTED) {
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
 
             stop();
             duration.sleep();
-            turn(90);
-            duration.sleep();
-            //ROS_INFO("DONE");
-            follow_wall(1);
-            break;
-        case State::FOLLOWING_WALL_OUT_OF_RANGE:
+            turn(-following_wall_side * TURN_DEGREES_90);
+            follow_wall(following_wall_side);
+        } else if(current_state == State::FOLLOWING_WALL_OUT_OF_RANGE) {
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
 
             stop();
-            break;
-        case State::FOLLOWING_WALL_TIMED_OUT:
+
+            int follow_side = 0;
+
+            //Check if there is a wall on the opposite side.
+            if(following_wall_side == WALL_FOLLOW_SIDE_LEFT) {
+                if(is_right_wall_present()) {
+                    //We used to follow left side and there is a right wall present. Follow that wall instead.
+                    follow_side = WALL_FOLLOW_SIDE_RIGHT;
+                } else if(is_left_wall_present()) {
+                    //We used to follow left side, there is no right wall to follow but the left side seem to be present again. Lets follow it again.
+                    follow_side = WALL_FOLLOW_SIDE_LEFT;
+                }
+            } else if(following_wall_side == WALL_FOLLOW_SIDE_RIGHT) {
+                if(is_left_wall_present()) {
+                    //We used to follow right side and there is a left wall present. Follow that wall instead.
+                    follow_side = WALL_FOLLOW_SIDE_LEFT;
+                } else if(is_right_wall_present()) {
+                    //We used to follow right side, there is no left wall to follow but the right side seem to be present again. Lets follow it again.
+                    follow_side = WALL_FOLLOW_SIDE_RIGHT;
+                }
+            } else {
+                ROS_WARN("Invalid wall following state!");
+            }
+
+            if(follow_side != 0) {
+                //There is a side to follow. Follow it.
+                follow_wall(follow_side);
+            } else {
+                //No walls in range. Just stop for now.
+                //TODO: Should do something else in the future.
+                stop();
+                ROS_INFO("I dont know what to do :)");
+            }
+
+        } else if(current_state == State::FOLLOWING_WALL_TIMED_OUT) {
             //Wall following timed out. This means that the robot has been following the wall for long time, but the is still more wall to follow.
 
             //Keep following wall since there is no other reason to do something else.
-            follow_wall(1);
-            break;
-        case State::TURNING_TIMED_OUT:
+            follow_wall(following_wall_side);
+        } else if(current_state == State::TURNING_TIMED_OUT) {
             stop();
-            break;
-        case State::STOPPING_TIMED_OUT:
-            break;
-        case State::STILL:
-            break;
+        } else if(current_state == State::STOPPING_TIMED_OUT) {
+
+        } else if(current_state == State::STILL) {
+
         }
     }
 
     void follow_wall(int side) {
+        following_wall_side = side;
         state_manager.set_state(StateManager::State::FOLLOWING_WALL);
 
         s8_wall_follower_controller::FollowWallGoal goal;
@@ -203,7 +240,7 @@ private:
         goal.degrees = degrees;
         turn_action.sendGoal(goal);
 
-        bool finised_before_timeout = turn_action.waitForResult(ros::Duration(30.0));
+        bool finised_before_timeout = turn_action.waitForResult(ros::Duration(ACTION_TURN_TIMEOUT));
 
         if(finised_before_timeout) {
             actionlib::SimpleClientGoalState state = turn_action.getState();
@@ -228,7 +265,7 @@ private:
         goal.stop = true;
         stop_action.sendGoal(goal);
 
-        bool finised_before_timeout = stop_action.waitForResult(ros::Duration(30.0));
+        bool finised_before_timeout = stop_action.waitForResult(ros::Duration(ACTION_STOP_TIMEOUT));
 
         if(finised_before_timeout) {
             actionlib::SimpleClientGoalState state = stop_action.getState();
