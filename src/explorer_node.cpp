@@ -12,10 +12,14 @@
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR     "front_distance_treshold_near"
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR      "front_distance_treshold_far"
 #define PARAM_NAME_FRONT_DISTANCE_STOP              "front_distance_stop"
+#define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR      "side_distance_treshold_near"
+#define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR       "side_distance_treshold_far"
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
 #define PARAM_DEFAULT_FRONT_DISTANCE_STOP           0.25
+#define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR   0.04
+#define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.2
 
 
 #define TOPIC_DISTANCES                             "/s8/ir_distances"
@@ -23,9 +27,9 @@
 #define ACTION_STOP                                 "/s8_motor_controller/stop"
 #define ACTION_FOLLOW_WALL                          "/s8/follow_wall"
 
-#define WALL_FOLLOW_REASON_TIMEOUT                   1
-#define WALL_FOLLOW_REASON_OUT_OF_RANGE              1 << 1
-#define WALL_FOLLOW_REASON_PREEMPTED                 1 << 2
+#define WALL_FOLLOW_REASON_TIMEOUT                  1
+#define WALL_FOLLOW_REASON_OUT_OF_RANGE             1 << 1
+#define WALL_FOLLOW_REASON_PREEMPTED                1 << 2
 
 typedef actionlib::SimpleActionClient<s8_wall_follower_controller::FollowWallAction> follow_wall_client;
 
@@ -93,10 +97,18 @@ class Explorer : public s8::Node {
     double front_distance_treshold_near;
     double front_distance_treshold_far;
     double front_distance_stop;
+    double side_distance_treshold_near;
+    double side_distance_treshold_far;
+    double front_left;
+    double front_right;
+    double left_back;
+    double left_front;
+    double right_back;
+    double right_front;
     StateManager state_manager;
 
 public:
-    Explorer() : turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)) {
+    Explorer() : turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
@@ -236,14 +248,14 @@ private:
             return;
         }
 
-        double front_left = ir_distances->front_left;
-        double front_right = ir_distances->front_right;
+        front_left = ir_distances->front_left;
+        front_right = ir_distances->front_right;
+        left_back = ir_distances->left_back;
+        left_front = ir_distances->left_front;
+        right_back = ir_distances->right_back;
+        right_front = ir_distances->right_front;
 
-        auto front_inside_treshold = [this] (double value) {
-            return value > front_distance_treshold_near && value < front_distance_treshold_far;
-        };
-
-        if(front_inside_treshold(front_left) || front_inside_treshold(front_right)) {
+        if(is_front_obstacle_present()) {
             //There is a wall in front of robot.
             ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
 
@@ -253,6 +265,34 @@ private:
                 follow_wall_action.cancelGoal();
             }
         }
+    }
+
+    bool is_inside_treshold(double value, double treshold_near, double treshold_far) {
+        return value > treshold_near && value < treshold_far;
+    }
+
+    bool is_front_inside_treshold(double value) {
+        return is_inside_treshold(value, front_distance_treshold_near, front_distance_treshold_far);
+    }
+
+    bool is_side_inside_treshold(double value) {
+        return is_inside_treshold(value, side_distance_treshold_near, side_distance_treshold_near);
+    }
+
+    bool is_side_wall_present(double back, double front) {
+        return is_side_inside_treshold(left_back) && is_side_inside_treshold(left_front);
+    }
+
+    bool is_left_wall_present() {
+        return is_side_wall_present(left_back, left_front);
+    }
+
+    bool is_right_wall_present() {
+        return is_side_wall_present(right_back, right_front);
+    }
+
+    bool is_front_obstacle_present() {
+        return is_front_inside_treshold(front_left) || is_front_inside_treshold(front_right);
     }
 
     bool is_following_wall() {
@@ -271,6 +311,8 @@ private:
         add_param(PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR, front_distance_treshold_near, PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR);
         add_param(PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR, front_distance_treshold_far, PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR);
         add_param(PARAM_NAME_FRONT_DISTANCE_STOP, front_distance_stop, PARAM_DEFAULT_FRONT_DISTANCE_STOP);
+        add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR, side_distance_treshold_near, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR);
+        add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR, side_distance_treshold_far, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR);
     }
 };
 
