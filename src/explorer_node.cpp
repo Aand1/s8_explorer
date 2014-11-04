@@ -93,11 +93,10 @@ class Explorer : public s8::Node {
     double front_distance_treshold_near;
     double front_distance_treshold_far;
     double front_distance_stop;
-    bool turning;
     StateManager state_manager;
 
 public:
-    Explorer() : turning(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)) {
+    Explorer() : turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
@@ -188,7 +187,6 @@ private:
     void turn(int degrees) {
         state_manager.set_state(StateManager::State::TURNING);
 
-        turning = true;
         s8_turner::TurnGoal goal;
         goal.degrees = degrees;
         turn_action.sendGoal(goal);
@@ -209,8 +207,6 @@ private:
         } else {
             state_manager.set_state(StateManager::State::TURNING_TIMED_OUT);
         }
-
-        turning = false;
     }
 
     void stop() {
@@ -236,7 +232,7 @@ private:
     }
 
     void distances_callback(const s8_msgs::IRDistances::ConstPtr & ir_distances) {
-        if(turning) {
+        if(!is_following_wall()) {
             return;
         }
 
@@ -257,6 +253,18 @@ private:
                 follow_wall_action.cancelGoal();
             }
         }
+    }
+
+    bool is_following_wall() {
+        return state_manager.get_state() == StateManager::State::FOLLOWING_WALL;
+    }
+
+    bool is_turning() {
+        return state_manager.get_state() == StateManager::State::TURNING;
+    }
+
+    bool is_stopping() {
+        return state_manager.get_state() == StateManager::State::STOPPING;
     }
 
     void init_params() {
