@@ -123,13 +123,13 @@ private:
         typedef StateManager::State State;
 
         ROS_INFO("State transition: %s -> %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str());
-    
+
         ros::Duration duration(5);
 
         switch(current_state) {
         case State::FOLLOWING_WALL_PREEMPTED:
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
-            
+
             stop();
             duration.sleep();
             turn(90);
@@ -144,7 +144,7 @@ private:
             break;
         case State::FOLLOWING_WALL_TIMED_OUT:
             //Wall following timed out. This means that the robot has been following the wall for long time, but the is still more wall to follow.
-            
+
             //Keep following wall since there is no other reason to do something else.
             follow_wall(1);
             break;
