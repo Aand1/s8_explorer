@@ -152,7 +152,7 @@ private:
 
             stop();
             duration.sleep();
-            turn(-following_wall_side * TURN_DEGREES_90);
+            turn(following_wall_side * TURN_DEGREES_90);
             follow_wall(following_wall_side);
         } else if(current_state == State::FOLLOWING_WALL_OUT_OF_RANGE) {
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
