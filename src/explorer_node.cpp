@@ -15,7 +15,7 @@
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
-#define PARAM_DEFAULT_FRONT_DISTANCE_STOP           0.18
+#define PARAM_DEFAULT_FRONT_DISTANCE_STOP           0.25
 
 
 #define TOPIC_DISTANCES                             "/s8/ir_distances"
@@ -134,8 +134,8 @@ private:
             duration.sleep();
             turn(90);
             duration.sleep();
-            ROS_INFO("DONE");
-            //follow_wall(1);
+            //ROS_INFO("DONE");
+            follow_wall(1);
             break;
         case State::FOLLOWING_WALL_OUT_OF_RANGE:
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
