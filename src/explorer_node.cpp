@@ -280,8 +280,6 @@ private:
     }
 
     void distances_callback(const s8_msgs::IRDistances::ConstPtr & ir_distances) {
-        ROS_INFO("left wall: %s right wall: %s", is_left_wall_present() ? "true" : "false", is_right_wall_present() ? "true" : "false");
-
         front_left = ir_distances->front_left;
         front_right = ir_distances->front_right;
         left_back = ir_distances->left_back;
