@@ -147,7 +147,7 @@ public:
 
         ROS_INFO("");
 
-        follow_wall(WALL_FOLLOW_SIDE_LEFT);
+        follow_wall(WALL_FOLLOW_SIDE_RIGHT);
     }
 
 private:
