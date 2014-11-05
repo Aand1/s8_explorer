@@ -154,7 +154,13 @@ private:
     void on_state_changed(StateManager::State previous_state, StateManager::State current_state) {
         typedef StateManager::State State;
 
-        ROS_INFO("State transition: %s -> %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str());
+        std::string print_extra = "";
+
+        if(state_manager.get_state() == StateManager::State::FOLLOWING_WALL) {
+            print_extra += "(" + std::string(following_wall_side == WALL_FOLLOW_SIDE_RIGHT ? "right" : "left") + ")";
+        }
+
+        ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
 
         ros::Duration duration(5);
 
