@@ -148,6 +148,13 @@ public:
         ROS_INFO("");
 
         follow_wall(WALL_FOLLOW_SIDE_RIGHT);
+        /*while(ros::ok()) {
+	        turn(-90);
+            ros::Duration duration(0.0);
+            duration.sleep();
+	        turn(90);
+            duration.sleep();
+        }*/
     }
 
 private:
@@ -180,13 +187,19 @@ private:
             int follow_side;
             while((follow_side = get_wall_to_follow()) == 0) {
                 //No walls in range. Just stop for now.
-                //TODO: Should do something else in the future.
-                stop();
-
+                //TODO: Should do something else in the future
                 ROS_INFO("I dont know what to do, so I'm just going forward!");
 
+                if(is_front_obstacle_too_close()) {
+                    ROS_INFO("Obstacle ahead! Turning...");
+                    ros::Duration duration(5);
+                    duration.sleep();
+                    turn(-following_wall_side * TURN_DEGREES_90);
+                    continue;
+                }
+
                 go_straight([this]() {
-                    return !is_left_wall_present() && !is_right_wall_present(); //TODO: What if obstacle ahead?
+                    return !is_left_wall_present() && !is_right_wall_present() && !is_front_obstacle_too_close();
                 });
 
                 stop();
@@ -301,7 +314,7 @@ private:
             //There is a wall in front of robot.
             ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
 
-            if(std::abs(front_left) <= front_distance_stop || std::abs(front_right) <= front_distance_stop) {
+            if(is_front_obstacle_too_close()) {
                 ROS_INFO("Too close to wall!");
                 //TODO: Need to cancel wall follower if running.
 		        if(is_following_wall()) {
@@ -384,6 +397,11 @@ private:
 
     bool is_front_obstacle_present() {
         return is_front_inside_treshold(front_left) || is_front_inside_treshold(front_right);
+    }
+
+    bool is_front_obstacle_too_close() {
+        double treshold = front_distance_stop; //TODO: Should be parameter to method?
+        return is_front_obstacle_present() && (std::abs(front_left) <= treshold || std::abs(front_right) <= treshold);
     }
 
     bool is_following_wall() {
