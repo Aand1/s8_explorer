@@ -27,6 +27,7 @@
 
 #define TOPIC_DISTANCES                             "/s8/ir_distances"
 #define TOPIC_TWIST                                 "/s8/twist"
+#define TOPIC_ACTUAL_TWIST                          "/s8/actual_twist"
 #define ACTION_TURN                                 "/s8/turn"
 #define ACTION_STOP                                 "/s8_motor_controller/stop"
 #define ACTION_FOLLOW_WALL                          "/s8/follow_wall"
@@ -106,6 +107,7 @@ public:
 
 class Explorer : public s8::Node {
     ros::Subscriber distances_subscriber;
+    ros::Subscriber actual_twist_subscriber;
     ros::Publisher twist_publisher;
     actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
@@ -125,12 +127,15 @@ class Explorer : public s8::Node {
     double go_straight_velocity;
     StateManager state_manager;
     bool should_stop_go_straight;
+    double actual_v;
+    double actual_w;
 
 public:
-    Explorer() : should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall_side(0) {
+    Explorer() : actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall_side(0) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
+        actual_twist_subscriber = nh.subscribe<geometry_msgs::Twist>(TOPIC_ACTUAL_TWIST, 1, &Explorer::actual_twist_callback, this);
         twist_publisher = nh.advertise<geometry_msgs::Twist>(TOPIC_TWIST, 1);
 
         ROS_INFO("Waiting for turn action server...");
@@ -332,6 +337,11 @@ private:
         }
     }
 
+    void actual_twist_callback(const geometry_msgs::Twist::ConstPtr & actual_twist) {
+        actual_v = actual_twist->linear.x;
+        actual_w = actual_twist->angular.z;
+    }
+
     int get_wall_to_follow() {
         //Check if there is a wall on the opposite side.
         if(following_wall_side == WALL_FOLLOW_SIDE_LEFT) {
@@ -406,7 +416,8 @@ private:
     }
 
     bool is_front_obstacle_too_close() {
-        double treshold = front_distance_stop; //TODO: Should be parameter to method?
+        double treshold = get_speed_calculated_distance_stop();
+        ROS_INFO("Front stop treshold: %.2lf", treshold);
         return is_front_obstacle_present() && (std::abs(front_left) <= treshold || std::abs(front_right) <= treshold);
     }
 
@@ -424,6 +435,14 @@ private:
 
     bool is_going_straight() {
         return state_manager.get_state() == StateManager::State::GOING_STRAIGHT;
+    }
+
+    double get_speed_calculated_distance_stop() {
+        const double nearest = 0.15;
+        const double farest = 0.25;
+        const double diff = farest - nearest;
+        const double max_speed = 0.4;
+        return (diff * actual_v / max_speed) + nearest;
     }
 
     void init_params() {
