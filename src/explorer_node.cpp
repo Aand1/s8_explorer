@@ -441,7 +441,7 @@ private:
         const double nearest = 0.15;
         const double farest = 0.25;
         const double diff = farest - nearest;
-        const double max_speed = 0.4;
+        const double max_speed = 0.2;
         return (diff * actual_v / max_speed) + nearest;
     }
 
