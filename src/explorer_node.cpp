@@ -207,9 +207,15 @@ private:
                 ROS_INFO("get wall: %d", get_wall_to_follow());
             }
 
+            if(is_front_obstacle_too_close()) {
+                //There is a wall to follow but we have an object to the front. So turn away from the wall.
+                ros::Duration duration(5);
+                duration.sleep();
+                turn(follow_side * TURN_DEGREES_90);
+            }
+
             //Now there is a wall to follow, so follow it.
             follow_wall(follow_side);
-
         } else if(current_state == State::FOLLOWING_WALL_TIMED_OUT) {
             //Wall following timed out. This means that the robot has been following the wall for long time, but the is still more wall to follow.
 
