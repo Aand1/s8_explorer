@@ -190,13 +190,13 @@ private:
 
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
             int follow_side;
-            while((follow_side = get_wall_to_follow()) == 0) {
+            while(!is_front_obstacle_too_close() && (follow_side = get_wall_to_follow()) == 0) {
                 //No walls in range. Just stop for now.
                 //TODO: Should do something else in the future
                 ROS_INFO("I dont know what to do, so I'm just going forward!");
 
                 if(is_front_obstacle_too_close()) {
-                    ROS_INFO("Obstacle ahead! Turning...");
+                    ROS_INFO("Turning...");
                     ros::Duration duration(5);
                     duration.sleep();
                     turn(-following_wall_side * TURN_DEGREES_90);
@@ -321,18 +321,13 @@ private:
             return;
         }
 
-        if(is_front_obstacle_present()) {
-            //There is a wall in front of robot.
-            ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
-
-            if(is_front_obstacle_too_close()) {
-                ROS_INFO("Too close to wall!");
-                //TODO: Need to cancel wall follower if running.
-		        if(is_following_wall()) {
-		            follow_wall_action.cancelGoal();
-                } else if(is_going_straight()) {
-                    should_stop_go_straight = true;
-                }
+        if(is_front_obstacle_too_close()) {
+     
+            //TODO: Need to cancel wall follower if running.
+	        if(is_following_wall()) {
+	            follow_wall_action.cancelGoal();
+            } else if(is_going_straight()) {
+                should_stop_go_straight = true;
             }
         }
     }
@@ -412,13 +407,30 @@ private:
     }
 
     bool is_front_obstacle_present() {
-        return is_front_inside_treshold(front_left) || is_front_inside_treshold(front_right);
+        auto is = is_front_inside_treshold(front_left) || is_front_inside_treshold(front_right);
+
+        if(is) {
+            ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
+        }
+
+        return is;
     }
 
     bool is_front_obstacle_too_close() {
-        double treshold = get_speed_calculated_distance_stop();
-        ROS_INFO("Front stop treshold: %.2lf", treshold);
-        return is_front_obstacle_present() && (std::abs(front_left) <= treshold || std::abs(front_right) <= treshold);
+        if(is_front_obstacle_present()) {
+            double treshold = get_speed_calculated_distance_stop();
+            ROS_INFO("Front stop treshold: %.2lf", treshold);
+
+            auto is = (std::abs(front_left) <= treshold || std::abs(front_right) <= treshold);
+    
+            if(is) {
+                ROS_INFO("Too close to obstacle!");
+            }
+
+            return is;
+        }
+
+        return false;
     }
 
     bool is_following_wall() {
@@ -441,7 +453,7 @@ private:
         const double nearest = 0.15;
         const double farest = 0.25;
         const double diff = farest - nearest;
-        const double max_speed = 0.4;
+        const double max_speed = 0.2;
         return (diff * actual_v / max_speed) + nearest;
     }
 
