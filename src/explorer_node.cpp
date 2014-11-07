@@ -189,19 +189,11 @@ private:
             stop();
 
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
-            int follow_side;
+            int follow_side = 0;
             while(!is_front_obstacle_too_close() && (follow_side = get_wall_to_follow()) == 0) {
                 //No walls in range. Just stop for now.
                 //TODO: Should do something else in the future
                 ROS_INFO("I dont know what to do, so I'm just going forward!");
-
-                if(is_front_obstacle_too_close()) {
-                    ROS_INFO("Turning...");
-                    ros::Duration duration(5);
-                    duration.sleep();
-                    turn(-following_wall_side * TURN_DEGREES_90);
-                    continue;
-                }
 
                 go_straight([this]() {
                     return !is_left_wall_present() && !is_right_wall_present() && !is_front_obstacle_too_close();
@@ -210,6 +202,15 @@ private:
                 stop();
 
                 ROS_INFO("get wall: %d", get_wall_to_follow());
+            }
+
+            if(follow_side == 0) {
+                follow_side = -following_wall_side;
+                
+                if(follow_side == 0) {
+                    ROS_FATAL("Weird state");
+                    follow_side = WALL_FOLLOW_SIDE_LEFT;
+                }
             }
 
             if(is_front_obstacle_too_close()) {
