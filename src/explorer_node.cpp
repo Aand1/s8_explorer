@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <actionlib/client/simple_action_client.h>
 #include <s8_common_node/Node.h>
+#include <s8_wall_follower_controller/wall_follower_controller_node.h>
 
 #include <s8_turner/TurnAction.h>
 #include <s8_motor_controller/StopAction.h>
@@ -37,12 +38,12 @@
 #define ACTION_STOP_TIMEOUT                         30.0
 #define ACTION_TURN_TIMEOUT                         30.0
 
-#define WALL_FOLLOW_REASON_TIMEOUT                  1
-#define WALL_FOLLOW_REASON_OUT_OF_RANGE             1 << 1
-#define WALL_FOLLOW_REASON_PREEMPTED                1 << 2
+#define WALL_FOLLOW_REASON_TIMEOUT                  s8::wall_follower_controller_node::FollowWallFinishedReason::TIMEOUT
+#define WALL_FOLLOW_REASON_OUT_OF_RANGE             s8::wall_follower_controller_node::FollowWallFinishedReason::OUT_OF_RANGE
+#define WALL_FOLLOW_REASON_PREEMPTED                s8::wall_follower_controller_node::FollowWallFinishedReason::PREEMPTED
 
-#define WALL_FOLLOW_SIDE_LEFT                       -1
-#define WALL_FOLLOW_SIDE_RIGHT                      1
+#define WALL_FOLLOW_SIDE_LEFT                       s8::wall_follower_controller_node::WallToFollow::LEFT
+#define WALL_FOLLOW_SIDE_RIGHT                      s8::wall_follower_controller_node::WallToFollow::RIGHT
 
 #define TURN_DEGREES_90                             90
 
