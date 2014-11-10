@@ -221,6 +221,7 @@ private:
             //Keep following wall since there is no other reason to do something else.
             follow_wall(following_wall_side);
         } else if(current_state == State::TURNING_TIMED_OUT) {
+	    ROS_WARN("Turning action timed out");
             stop();
         } else if(current_state == State::STOPPING_TIMED_OUT) {
 
@@ -264,7 +265,7 @@ private:
         turn_action.sendGoal(goal);
 
         bool finised_before_timeout = turn_action.waitForResult(ros::Duration(ACTION_TURN_TIMEOUT));
-
+	ROS_INFO("Turn action state: %s", turn_action.getState().toString().c_str());
         if(finised_before_timeout) {
             actionlib::SimpleClientGoalState state = turn_action.getState();
             if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
@@ -301,6 +302,8 @@ private:
         } else {
             state_manager.set_state(StateManager::State::STOPPING_TIMED_OUT);
         }
+
+        actual_v = actual_w = 0.0; //TODO: safe to assume this?
     }
 
     void distances_callback(const s8_msgs::IRDistances::ConstPtr & ir_distances) {
