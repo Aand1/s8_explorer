@@ -20,6 +20,8 @@
   <build_depend>s8_turner</build_depend>
   <build_depend>s8_motor_controller</build_depend>
   <build_depend>s8_wall_follower_controller</build_depend>
+  <build_depend>s8_ir_sensors</build_depend>
+  <build_depend>s8_utils</build_depend>
 
   <run_depend>roscpp</run_depend>
   <run_depend>s8_msgs</run_depend>
@@ -28,5 +30,7 @@
   <run_depend>s8_turner</run_depend>
   <run_depend>s8_motor_controller</run_depend>
   <run_depend>s8_wall_follower_controller</run_depend>
+  <run_depend>s8_ir_sensors</run_depend>
+  <run_depend>s8_utils</run_depend>
 
 </package>

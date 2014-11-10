@@ -1,14 +1,15 @@
 #include <ros/ros.h>
+
+#include <s8_explorer/explorer_node.h>
 #include <actionlib/client/simple_action_client.h>
 #include <s8_common_node/Node.h>
+#include <s8_utils/math.h>
 
 #include <s8_turner/TurnAction.h>
 #include <s8_motor_controller/StopAction.h>
 #include <s8_wall_follower_controller/FollowWallAction.h>
 #include <s8_msgs/IRDistances.h>
 #include <geometry_msgs/Twist.h>
-
-#define NODE_NAME                                   "s8_explorer_node"
 
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR     "front_distance_treshold_near"
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR      "front_distance_treshold_far"
@@ -26,27 +27,18 @@
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.2
 #define PARAM_DEFAULT_GO_STRAIGHT_VELOCITY          0.2
 
-
-#define TOPIC_DISTANCES                             "/s8/ir_distances"
-#define TOPIC_TWIST                                 "/s8/twist"
-#define TOPIC_ACTUAL_TWIST                          "/s8/actual_twist"
-#define ACTION_TURN                                 "/s8/turn"
-#define ACTION_STOP                                 "/s8_motor_controller/stop"
-#define ACTION_FOLLOW_WALL                          "/s8/follow_wall"
-
 #define ACTION_STOP_TIMEOUT                         30.0
 #define ACTION_TURN_TIMEOUT                         30.0
 
-#define WALL_FOLLOW_REASON_TIMEOUT                  1
-#define WALL_FOLLOW_REASON_OUT_OF_RANGE             1 << 1
-#define WALL_FOLLOW_REASON_PREEMPTED                1 << 2
-
-#define WALL_FOLLOW_SIDE_LEFT                       -1
-#define WALL_FOLLOW_SIDE_RIGHT                      1
-
 #define TURN_DEGREES_90                             90
 
+using namespace s8::explorer_node;
+using namespace s8::utils::math;
+using s8::turner_node::to_string;
+
 typedef actionlib::SimpleActionClient<s8_wall_follower_controller::FollowWallAction> follow_wall_client;
+typedef s8::wall_follower_controller_node::FollowWallFinishedReason FollowWallFinishedReason;
+typedef s8::turner_node::Direction RotateDirection;
 
 class StateManager {
 public:
@@ -114,7 +106,7 @@ class Explorer : public s8::Node {
     actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
     follow_wall_client follow_wall_action;
-    int following_wall_side;
+    FollowingWall following_wall;
     double front_distance_treshold_near;
     double front_distance_treshold_far;
     double front_distance_stop_max;
@@ -134,7 +126,7 @@ class Explorer : public s8::Node {
     double actual_w;
 
 public:
-    Explorer() : actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall_side(0) {
+    Explorer() : actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
@@ -155,7 +147,7 @@ public:
 
         ROS_INFO("");
 
-        follow_wall(WALL_FOLLOW_SIDE_RIGHT);
+        follow_wall(FollowingWall::RIGHT);
     }
 
 private:
@@ -165,25 +157,25 @@ private:
         std::string print_extra = "";
 
         if(state_manager.get_state() == StateManager::State::FOLLOWING_WALL) {
-            print_extra += "(" + std::string(following_wall_side == WALL_FOLLOW_SIDE_RIGHT ? "right" : "left") + ")";
+            print_extra += "(" + to_string(following_wall) + ")";
         }
-
+        
         ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
 
         if(current_state == State::FOLLOWING_WALL_PREEMPTED) {
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
 
             stop();
-            turn(following_wall_side * TURN_DEGREES_90);
-            follow_wall(following_wall_side);
+            turn(RotateDirection(-following_wall) * TURN_DEGREES_90);
+            follow_wall(following_wall);
         } else if(current_state == State::FOLLOWING_WALL_OUT_OF_RANGE) {
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
 
             stop();
 
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
-            int follow_side = get_wall_to_follow();
-            if(follow_side == 0) {
+            FollowingWall follow_side = get_wall_to_follow();
+            if(follow_side == FollowingWall::NONE) {
                 //No walls in range. Just stop for now.
                 //TODO: Should do something else in the future
                 ROS_INFO("I dont know what to do, so I'm just going forward!");
@@ -199,18 +191,18 @@ private:
 
             follow_side = get_wall_to_follow();
 
-            if(follow_side == 0) {
-                follow_side = -following_wall_side;
+            if(follow_side == FollowingWall::NONE) {
+                follow_side = FollowingWall(-following_wall);
                 
-                if(follow_side == 0) {
+                if(follow_side == FollowingWall::NONE) {
                     ROS_FATAL("Weird state");
-                    follow_side = WALL_FOLLOW_SIDE_LEFT;
+                    follow_side = FollowingWall::LEFT;
                 }
             }
 
             if(is_front_obstacle_too_close()) {
                 //There is a wall to follow but we have an object to the front. So turn away from the wall.
-                turn(follow_side * TURN_DEGREES_90);
+                turn(RotateDirection(-follow_side) * TURN_DEGREES_90);
             }
 
             //Now there is a wall to follow, so follow it.
@@ -219,7 +211,7 @@ private:
             //Wall following timed out. This means that the robot has been following the wall for long time, but the is still more wall to follow.
 
             //Keep following wall since there is no other reason to do something else.
-            follow_wall(following_wall_side);
+            follow_wall(following_wall);
         } else if(current_state == State::TURNING_TIMED_OUT) {
 	    ROS_WARN("Turning action timed out");
             stop();
@@ -230,26 +222,32 @@ private:
         }
     }
 
-    void follow_wall(int side) {
-        following_wall_side = side;
+    void follow_wall(FollowingWall wall) {
+        following_wall = wall;
+
+        if(following_wall == FollowingWall::NONE) {
+            ROS_FATAL("follow_wall was called with NONE wall to follow.");
+            return;
+        }
+
         state_manager.set_state(StateManager::State::FOLLOWING_WALL);
 
         s8_wall_follower_controller::FollowWallGoal goal;
-        goal.wall_to_follow = side;
+        goal.wall_to_follow = wall;
         follow_wall_action.sendGoal(goal, boost::bind(&Explorer::follow_wall_done_callback, this, _1, _2), follow_wall_client::SimpleActiveCallback(), follow_wall_client::SimpleFeedbackCallback());
     }
 
     void follow_wall_done_callback(const actionlib::SimpleClientGoalState& state, const s8_wall_follower_controller::FollowWallResultConstPtr & result) {
-        int reason = follow_wall_action.getResult()->reason;
+        FollowWallFinishedReason reason = FollowWallFinishedReason(follow_wall_action.getResult()->reason);
 
         switch(reason) {
-        case WALL_FOLLOW_REASON_OUT_OF_RANGE:
+        case FollowWallFinishedReason::OUT_OF_RANGE:
             state_manager.set_state(StateManager::State::FOLLOWING_WALL_OUT_OF_RANGE);
             break;
-        case WALL_FOLLOW_REASON_PREEMPTED:
+        case FollowWallFinishedReason::PREEMPTED:
             state_manager.set_state(StateManager::State::FOLLOWING_WALL_PREEMPTED);
             break;
-        case WALL_FOLLOW_REASON_TIMEOUT:
+        case FollowWallFinishedReason::TIMEOUT:
             state_manager.set_state(StateManager::State::FOLLOWING_WALL_TIMED_OUT);
             break;
         default:
@@ -258,6 +256,7 @@ private:
     }
 
     void turn(int degrees) {
+        ROS_INFO("Turning %s", to_string(RotateDirection(sign(degrees))).c_str());
         state_manager.set_state(StateManager::State::TURNING);
 
         s8_turner::TurnGoal goal;
@@ -334,35 +333,35 @@ private:
         actual_w = actual_twist->angular.z;
     }
 
-    int get_wall_to_follow() {
+    FollowingWall get_wall_to_follow() {
         //Check if there is a wall on the opposite side.
-        if(following_wall_side == WALL_FOLLOW_SIDE_LEFT) {
+        if(following_wall == FollowingWall::LEFT) {
             if(is_right_wall_present()) {
                 //We used to follow left side and there is a right wall present. Follow that wall instead.
-                return WALL_FOLLOW_SIDE_RIGHT;
+                return FollowingWall::RIGHT;
             } else if(is_left_wall_present()) {
                 //We used to follow left side, there is no right wall to follow but the left side seem to be present again. Lets follow it again.
-                return WALL_FOLLOW_SIDE_LEFT;
+                return FollowingWall::LEFT;
             }
-        } else if(following_wall_side == WALL_FOLLOW_SIDE_RIGHT) {
+        } else if(following_wall == FollowingWall::RIGHT) {
             if(is_left_wall_present()) {
                 //We used to follow right side and there is a left wall present. Follow that wall instead.
-                return WALL_FOLLOW_SIDE_LEFT;
+                return FollowingWall::LEFT;
             } else if(is_right_wall_present()) {
                 //We used to follow right side, there is no left wall to follow but the right side seem to be present again. Lets follow it again.
-                return WALL_FOLLOW_SIDE_RIGHT;
+                return FollowingWall::RIGHT;
             }
         } else {
             if(is_right_wall_present()) {
                 //We used to follow left side and there is a right wall present. Follow that wall instead.
-                return WALL_FOLLOW_SIDE_RIGHT;
+                return FollowingWall::RIGHT;
             } else if(is_left_wall_present()) {
                 //We used to follow left side, there is no right wall to follow but the left side seem to be present again. Lets follow it again.
-                return WALL_FOLLOW_SIDE_LEFT;
+                return FollowingWall::LEFT;
             }
         }
 
-        return 0;
+        return FollowingWall::NONE;
     }
 
     void go_straight(std::function<bool()> condition) {
