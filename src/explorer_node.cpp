@@ -124,9 +124,10 @@ class Explorer : public s8::Node {
     bool should_stop_go_straight;
     double actual_v;
     double actual_w;
+    bool first;
 
 public:
-    Explorer() : actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE) {
+    Explorer() : first(true), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
@@ -146,11 +147,27 @@ public:
         ROS_INFO("Connected to follow_wall action server!");
 
         ROS_INFO("");
-
-        follow_wall(FollowingWall::RIGHT);
     }
 
 private:
+    void initial_move() {
+        /*int dir = 1;
+        while(ros::ok()) {
+            turn(dir * TURN_DEGREES_90);
+            ros::Duration duration(1.0);
+            duration.sleep();
+            dir *= -1;
+        }*/
+
+        if(is_right_wall_present()) {
+            follow_wall(FollowingWall::RIGHT);
+        } else if(is_left_wall_present()) {
+            follow_wall(FollowingWall::LEFT);
+        } else {
+            ROS_INFO("No wall to follow.");
+        }      
+    }
+
     void on_state_changed(StateManager::State previous_state, StateManager::State current_state) {
         typedef StateManager::State State;
 
@@ -264,7 +281,7 @@ private:
         turn_action.sendGoal(goal);
 
         bool finised_before_timeout = turn_action.waitForResult(ros::Duration(ACTION_TURN_TIMEOUT));
-	ROS_INFO("Turn action state: %s", turn_action.getState().toString().c_str());
+        ROS_INFO("Turn action state: %s", turn_action.getState().toString().c_str());
         if(finised_before_timeout) {
             actionlib::SimpleClientGoalState state = turn_action.getState();
             if(state == actionlib::SimpleClientGoalState::SUCCEEDED) {
@@ -312,6 +329,11 @@ private:
         left_front = ir_distances->left_front;
         right_back = ir_distances->right_back;
         right_front = ir_distances->right_front;
+
+        if(first) {
+            first = false;
+            initial_move();
+        }
 
 	    if(!is_following_wall() && !is_going_straight()) {
             return;
