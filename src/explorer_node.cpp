@@ -18,14 +18,16 @@
 #define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR      "side_distance_treshold_near"
 #define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR       "side_distance_treshold_far"
 #define PARAM_NAME_GO_STRAIGHT_VELOCITY             "go_straight_velocity"
+#define PARAM_NAME_THRESHOLD_TOLERANCE		    "threshold_tolerance"
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
-#define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MAX       0.28
-#define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MIN       0.19
+#define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MAX       0.25
+#define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MIN       0.18
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR   0.04
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.2
 #define PARAM_DEFAULT_GO_STRAIGHT_VELOCITY          0.2
+#define PARAM_DEFAULT_THRESHOLD_TOLERANCE	    0.15
 
 #define ACTION_STOP_TIMEOUT                         30.0
 #define ACTION_TURN_TIMEOUT                         30.0
@@ -113,6 +115,7 @@ class Explorer : public s8::Node {
     double front_distance_stop_min;
     double side_distance_treshold_near;
     double side_distance_treshold_far;
+    double threshold_tolerance;
     double front_left;
     double front_right;
     double left_back;
@@ -198,7 +201,7 @@ private:
                 ROS_INFO("I dont know what to do, so I'm just going forward!");
 
                 go_straight([this]() {
-                    return !is_left_wall_present() && !is_right_wall_present() && !is_front_obstacle_too_close();
+                    return !is_left_wall_present() && !is_right_wall_present() && !is_front_obstacle_too_close() && !is_side_wall_over_threshold(left_back, left_front) && !is_side_wall_over_threshold(right_back, right_front);
                 });
 
                 stop();
@@ -344,6 +347,7 @@ private:
             //TODO: Need to cancel wall follower if running.
 	        if(is_following_wall()) {
 	            follow_wall_action.cancelGoal();
+		    ROS_INFO("Wall Following goal cancelled due to wall too close");
             } else if(is_going_straight()) {
                 should_stop_go_straight = true;
             }
@@ -424,6 +428,11 @@ private:
         return is_side_wall_present(right_back, right_front);
     }
 
+    bool is_side_wall_over_threshold(double back, double front){
+	return is_side_wall_present(back*(1+threshold_tolerance), front*(1+threshold_tolerance));
+    }
+
+
     bool is_front_obstacle_present() {
         auto is = is_front_inside_treshold(front_left) || is_front_inside_treshold(front_right);
 
@@ -483,7 +492,8 @@ private:
         add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR, side_distance_treshold_near, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR);
         add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR, side_distance_treshold_far, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR);
         add_param(PARAM_NAME_GO_STRAIGHT_VELOCITY, go_straight_velocity, PARAM_DEFAULT_GO_STRAIGHT_VELOCITY);
-    }
+	add_param(PARAM_NAME_THRESHOLD_TOLERANCE, threshold_tolerance, PARAM_DEFAULT_THRESHOLD_TOLERANCE); 
+}
 };
 
 int main(int argc, char **argv) {
