@@ -135,7 +135,7 @@ class Explorer : public s8::Node {
     bool preempted;
 
 public:
-    Explorer() : explore(false), preempted(false), first(true), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE), explore_action_server(nh, ACTION_EXPLORE, boost::bind(&Explorer::action_execute_explore_callback, this, _1), false) {
+    Explorer() : explore(false), preempted(false), first(false), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE), explore_action_server(nh, ACTION_EXPLORE, boost::bind(&Explorer::action_execute_explore_callback, this, _1), false) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
@@ -192,8 +192,6 @@ private:
         ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
 
         if(!explore) {
-
-
             return;
         }
 
@@ -314,6 +312,11 @@ private:
 
         state_manager.set_state(StateManager::State::FOLLOWING_WALL);
 
+        /*if(is_front_obstacle_too_close()) {
+            state_manager.set_state(StateManager::State::FOLLOWING_WALL_PREEMPTED);
+            return;
+        }*/
+
         s8_wall_follower_controller::FollowWallGoal goal;
         goal.wall_to_follow = wall;
         follow_wall_action.sendGoal(goal, boost::bind(&Explorer::follow_wall_done_callback, this, _1, _2), follow_wall_client::SimpleActiveCallback(), follow_wall_client::SimpleFeedbackCallback());
@@ -409,7 +412,7 @@ private:
             //TODO: Need to cancel wall follower if running.
             if(is_following_wall()) {
                 follow_wall_action.cancelGoal();
-            ROS_INFO("Wall Following goal cancelled due to wall too close");
+                ROS_INFO("Wall Following goal cancelled due to wall too close");
             } else if(is_going_straight()) {
                 should_stop_go_straight = true;
             }
