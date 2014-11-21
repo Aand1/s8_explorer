@@ -2,6 +2,7 @@
 
 #include <s8_explorer/explorer_node.h>
 #include <actionlib/client/simple_action_client.h>
+#include <actionlib/server/simple_action_server.h>
 #include <s8_common_node/Node.h>
 #include <s8_utils/math.h>
 
@@ -10,6 +11,7 @@
 #include <s8_wall_follower_controller/FollowWallAction.h>
 #include <s8_msgs/IRDistances.h>
 #include <geometry_msgs/Twist.h>
+#include <s8_explorer/ExploreAction.h>
 
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR     "front_distance_treshold_near"
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR      "front_distance_treshold_far"
@@ -107,6 +109,7 @@ class Explorer : public s8::Node {
     ros::Publisher twist_publisher;
     actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
+    actionlib::SimpleActionServer<s8_explorer::ExploreAction> explore_action_server;
     follow_wall_client follow_wall_action;
     FollowingWall following_wall;
     double front_distance_treshold_near;
@@ -128,14 +131,19 @@ class Explorer : public s8::Node {
     double actual_v;
     double actual_w;
     bool first;
+    bool explore;
+    bool preempted;
 
 public:
-    Explorer() : first(true), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE) {
+    Explorer() : explore(false), preempted(false), first(true), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE), explore_action_server(nh, ACTION_EXPLORE, boost::bind(&Explorer::action_execute_explore_callback, this, _1), false) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
         actual_twist_subscriber = nh.subscribe<geometry_msgs::Twist>(TOPIC_ACTUAL_TWIST, 1, &Explorer::actual_twist_callback, this);
         twist_publisher = nh.advertise<geometry_msgs::Twist>(TOPIC_TWIST, 1);
+
+        explore_action_server.registerPreemptCallback(boost::bind(&Explorer::explore_action_cancel_callback, this));
+
 
         ROS_INFO("Waiting for turn action server...");
         turn_action.waitForServer();
@@ -181,6 +189,12 @@ private:
         }
         
         ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
+
+        if(!explore) {
+
+
+            return;
+        }
 
         if(current_state == State::FOLLOWING_WALL_PREEMPTED) {
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
@@ -240,6 +254,52 @@ private:
         } else if(current_state == State::STILL) {
 
         }
+    }
+
+    void action_execute_explore_callback(const s8_explorer::ExploreGoalConstPtr & explore_goal) {
+        ROS_INFO("STARTED: Explore action started!");
+        explore = true;
+        preempted = false;
+
+        const int timeout = 60 * 5; // 5 min.
+        const int rate_hz = 10;
+        ros::Rate rate(rate_hz);
+        int ticks = 0;
+
+        while(ros::ok() && explore && ticks <= timeout * rate_hz) {
+            rate.sleep();
+            ticks++;
+        }
+
+        if(ticks >= timeout * rate_hz) {
+            stop();
+            s8_explorer::ExploreResult explore_action_result;
+            ROS_INFO("TIMEOUT: Explore action timed out.");
+            explore_action_server.setAborted(explore_action_result);
+        } else {
+            if(preempted) {
+                s8_explorer::ExploreResult explore_action_result;
+                ROS_INFO("PREEMPTED: Explore action preempted.");
+                explore_action_server.setPreempted(explore_action_result);
+            } else {
+                stop();
+                s8_explorer::ExploreResult explore_action_result;
+                ROS_INFO("FAILED: Object alignment action failed.");
+                explore_action_server.setAborted(explore_action_result);
+            }
+        }
+    }
+
+    void explore_action_cancel_callback() {
+        //TODO: Need to cancel wall follower if running.
+        if(is_following_wall()) {
+            follow_wall_action.cancelGoal();
+        } else if(is_going_straight()) {
+            should_stop_go_straight = true;
+        }
+
+        preempted = true;
+        explore = false;
     }
 
     void follow_wall(FollowingWall wall) {
