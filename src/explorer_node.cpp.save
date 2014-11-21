@@ -186,12 +186,13 @@ private:
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
 
             stop();
+	   if ()
             turn(RotateDirection(-following_wall) * TURN_DEGREES_90);
             follow_wall(following_wall);
         } else if(current_state == State::FOLLOWING_WALL_OUT_OF_RANGE) {
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
 
-            //stop();
+           // stop();
 
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
             FollowingWall follow_side = get_wall_to_follow();
