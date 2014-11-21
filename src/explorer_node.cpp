@@ -20,7 +20,7 @@
 #define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR      "side_distance_treshold_near"
 #define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR       "side_distance_treshold_far"
 #define PARAM_NAME_GO_STRAIGHT_VELOCITY             "go_straight_velocity"
-#define PARAM_NAME_THRESHOLD_TOLERANCE		    "threshold_tolerance"
+#define PARAM_NAME_THRESHOLD_TOLERANCE              "threshold_tolerance"
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
@@ -29,7 +29,7 @@
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR   0.04
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.2
 #define PARAM_DEFAULT_GO_STRAIGHT_VELOCITY          0.2
-#define PARAM_DEFAULT_THRESHOLD_TOLERANCE	    0.15
+#define PARAM_DEFAULT_THRESHOLD_TOLERANCE           0.15
 
 #define ACTION_STOP_TIMEOUT                         30.0
 #define ACTION_TURN_TIMEOUT                         30.0
@@ -247,7 +247,7 @@ private:
             //Keep following wall since there is no other reason to do something else.
             follow_wall(following_wall);
         } else if(current_state == State::TURNING_TIMED_OUT) {
-	    ROS_WARN("Turning action timed out");
+        ROS_WARN("Turning action timed out");
             stop();
         } else if(current_state == State::STOPPING_TIMED_OUT) {
 
@@ -398,16 +398,16 @@ private:
             initial_move();
         }
 
-	    if(!is_following_wall() && !is_going_straight()) {
+        if(!is_following_wall() && !is_going_straight()) {
             return;
         }
 
         if(is_front_obstacle_too_close()) {
      
             //TODO: Need to cancel wall follower if running.
-	        if(is_following_wall()) {
-	            follow_wall_action.cancelGoal();
-		    ROS_INFO("Wall Following goal cancelled due to wall too close");
+            if(is_following_wall()) {
+                follow_wall_action.cancelGoal();
+            ROS_INFO("Wall Following goal cancelled due to wall too close");
             } else if(is_going_straight()) {
                 should_stop_go_straight = true;
             }
@@ -489,7 +489,7 @@ private:
     }
 
     bool is_side_wall_over_threshold(double back, double front){
-	return is_side_wall_present(back*(1+threshold_tolerance), front*(1+threshold_tolerance));
+    return is_side_wall_present(back*(1+threshold_tolerance), front*(1+threshold_tolerance));
     }
 
 
@@ -541,8 +541,8 @@ private:
         const double farest = front_distance_stop_max;
         const double diff = farest - nearest;
         const double max_speed = 0.2;
-       // return (diff * actual_v / max_speed) + nearest;
-	return (farest);
+        // return (diff * actual_v / max_speed) + nearest;
+        return (farest);
     }
 
     void init_params() {
@@ -553,8 +553,8 @@ private:
         add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR, side_distance_treshold_near, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR);
         add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR, side_distance_treshold_far, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR);
         add_param(PARAM_NAME_GO_STRAIGHT_VELOCITY, go_straight_velocity, PARAM_DEFAULT_GO_STRAIGHT_VELOCITY);
-	add_param(PARAM_NAME_THRESHOLD_TOLERANCE, threshold_tolerance, PARAM_DEFAULT_THRESHOLD_TOLERANCE); 
-}
+        add_param(PARAM_NAME_THRESHOLD_TOLERANCE, threshold_tolerance, PARAM_DEFAULT_THRESHOLD_TOLERANCE); 
+    }
 };
 
 int main(int argc, char **argv) {
