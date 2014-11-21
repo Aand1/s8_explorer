@@ -5,3 +5,4 @@ bool explore
 bool explored
 ---
 #feedback
+bool explored

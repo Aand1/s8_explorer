@@ -142,9 +142,6 @@ public:
         actual_twist_subscriber = nh.subscribe<geometry_msgs::Twist>(TOPIC_ACTUAL_TWIST, 1, &Explorer::actual_twist_callback, this);
         twist_publisher = nh.advertise<geometry_msgs::Twist>(TOPIC_TWIST, 1);
 
-        explore_action_server.registerPreemptCallback(boost::bind(&Explorer::explore_action_cancel_callback, this));
-
-
         ROS_INFO("Waiting for turn action server...");
         turn_action.waitForServer();
         ROS_INFO("Connected to turn action server!");
@@ -157,11 +154,15 @@ public:
         follow_wall_action.waitForServer();
         ROS_INFO("Connected to follow_wall action server!");
 
+        explore_action_server.registerPreemptCallback(boost::bind(&Explorer::explore_action_cancel_callback, this));
+        explore_action_server.start();
+
         ROS_INFO("");
     }
 
 private:
     void initial_move() {
+        ROS_INFO("initial move");
         /*int dir = 1;
         while(ros::ok()) {
             turn(dir * TURN_DEGREES_90);
@@ -247,7 +248,7 @@ private:
             //Keep following wall since there is no other reason to do something else.
             follow_wall(following_wall);
         } else if(current_state == State::TURNING_TIMED_OUT) {
-        ROS_WARN("Turning action timed out");
+            ROS_WARN("Turning action timed out");
             stop();
         } else if(current_state == State::STOPPING_TIMED_OUT) {
 
@@ -260,6 +261,7 @@ private:
         ROS_INFO("STARTED: Explore action started!");
         explore = true;
         preempted = false;
+        first = true;
 
         const int timeout = 60 * 5; // 5 min.
         const int rate_hz = 10;
