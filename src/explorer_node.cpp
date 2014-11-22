@@ -183,6 +183,10 @@ private:
     void on_state_changed(StateManager::State previous_state, StateManager::State current_state) {
         typedef StateManager::State State;
 
+        if(!explore) {
+            return;
+        }
+
         std::string print_extra = "";
 
         if(state_manager.get_state() == StateManager::State::FOLLOWING_WALL) {
@@ -190,10 +194,6 @@ private:
         }
         
         ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
-
-        if(!explore) {
-            return;
-        }
 
         if(current_state == State::FOLLOWING_WALL_PREEMPTED) {
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
