@@ -546,8 +546,7 @@ private:
         const double farest = front_distance_stop_max;
         const double diff = farest - nearest;
         const double max_speed = 0.2;
-        // return (diff * actual_v / max_speed) + nearest;
-        return (farest);
+        return (diff * actual_v / max_speed) + nearest;
     }
 
     void init_params() {
