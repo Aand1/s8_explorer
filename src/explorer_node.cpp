@@ -176,8 +176,22 @@ private:
         } else if(is_left_wall_present()) {
             follow_wall(FollowingWall::LEFT);
         } else {
-            ROS_INFO("No wall to follow.");
-        }      
+            state_manager.set_state(StateManager::State::FOLLOWING_WALL_OUT_OF_RANGE);
+        }
+        /*
+            go_straight([this,front_left, front_right]() {
+                ros::spinOnce();
+                return !is_left_wall_present() && !is_right_wall_present() && !is_front_obstacle_too_close() && !is_side_wall_over_threshold(left_back, left_front) && !is_side_wall_over_threshold(right_back, right_front);
+            });
+            stop();
+            if(is_right_wall_present()) {
+                follow_wall(FollowingWall::RIGHT);
+            } else if(is_left_wall_present()) {
+                follow_wall(FollowingWall::LEFT);
+            } else {
+                follow_wall(FollowingWall::NONE);
+            }
+        } */  
     }
 
     void on_state_changed(StateManager::State previous_state, StateManager::State current_state) {
@@ -193,17 +207,27 @@ private:
             print_extra += "(" + to_string(following_wall) + ")";
         }
         
-        ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
+        //ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
 
         if(current_state == State::FOLLOWING_WALL_PREEMPTED) {
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
-
+            ROS_INFO("PREEMPTED");
             stop();
-            turn(RotateDirection(-following_wall) * TURN_DEGREES_90);
+            if(following_wall == FollowingWall::NONE) {
+                ROS_FATAL("no wall");
+            }
+            if (is_left_wall_present() || is_right_wall_present()){
+                ROS_INFO("SEE A WALL");
+                turn(RotateDirection(-following_wall) * TURN_DEGREES_90);
+            }
+            else{
+                ROS_INFO("DONT SEE A WALL");
+                turn(RotateDirection(following_wall) * TURN_DEGREES_90);
+            }
             follow_wall(following_wall);
         } else if(current_state == State::FOLLOWING_WALL_OUT_OF_RANGE) {
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
-
+            ROS_INFO("OUT OF RANGE");
             //stop();
 
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
@@ -211,7 +235,7 @@ private:
             if(follow_side == FollowingWall::NONE) {
                 //No walls in range. Just stop for now.
                 //TODO: Should do something else in the future
-                ROS_INFO("I dont know what to do, so I'm just going forward!");
+                //ROS_INFO("I dont know what to do, so I'm just going forward!");
 
                 go_straight([this]() {
                     return !is_left_wall_present() && !is_right_wall_present() && !is_front_obstacle_too_close() && !is_side_wall_over_threshold(left_back, left_front) && !is_side_wall_over_threshold(right_back, right_front);
@@ -219,10 +243,11 @@ private:
 
                 stop();
 
-                ROS_INFO("get wall: %d", get_wall_to_follow());
+                //ROS_INFO("get wall: %d", get_wall_to_follow());
             }
 
             follow_side = get_wall_to_follow();
+            //ROS_INFO("GET PREVIOUS WALL: %d", follow_side);
 
             if(follow_side == FollowingWall::NONE) {
                 follow_side = FollowingWall(-following_wall);
@@ -235,10 +260,13 @@ private:
 
             if(is_front_obstacle_too_close()) {
                 //There is a wall to follow but we have an object to the front. So turn away from the wall.
+                ROS_INFO("Stopping is_front_obstacle_too_close()");
+                stop();
                 turn(RotateDirection(-follow_side) * TURN_DEGREES_90);
             }
 
             //Now there is a wall to follow, so follow it.
+            following_wall = follow_side;
             follow_wall(follow_side);
         } else if(current_state == State::FOLLOWING_WALL_TIMED_OUT) {
             //Wall following timed out. This means that the robot has been following the wall for long time, but the is still more wall to follow.
@@ -429,6 +457,7 @@ private:
         if(following_wall == FollowingWall::LEFT) {
             if(is_right_wall_present()) {
                 //We used to follow left side and there is a right wall present. Follow that wall instead.
+                ROS_INFO("FOLLOWING RIGHT");
                 return FollowingWall::RIGHT;
             } else if(is_left_wall_present()) {
                 //We used to follow left side, there is no right wall to follow but the left side seem to be present again. Lets follow it again.
@@ -464,6 +493,7 @@ private:
 
         ros::Rate loop_rate(25);
         while(condition() && ros::ok() && !should_stop_go_straight) {
+            ros::spinOnce();
             twist_publisher.publish(twist);
             loop_rate.sleep();
         }
@@ -502,7 +532,7 @@ private:
         auto is = is_front_inside_treshold(front_left) || is_front_inside_treshold(front_right);
 
         if(is) {
-            ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
+            //ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
         }
 
         return is;
@@ -511,7 +541,7 @@ private:
     bool is_front_obstacle_too_close() {
         if(is_front_obstacle_present()) {
             double treshold = get_speed_calculated_distance_stop();
-            ROS_INFO("Front stop treshold: %.2lf", treshold);
+            //ROS_INFO("Front stop treshold: %.2lf", treshold);
 
             auto is = (std::abs(front_left) <= treshold || std::abs(front_right) <= treshold);
     
