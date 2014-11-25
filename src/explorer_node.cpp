@@ -12,6 +12,8 @@
 #include <s8_msgs/IRDistances.h>
 #include <geometry_msgs/Twist.h>
 #include <s8_explorer/ExploreAction.h>
+#include <s8_mapper/PlaceNode.h>
+#include <s8_mapper/mapper_node.h>
 
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR     "front_distance_treshold_near"
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR      "front_distance_treshold_far"
@@ -37,6 +39,7 @@
 using namespace s8::explorer_node;
 using namespace s8::utils::math;
 using s8::turner_node::to_string;
+using s8::mapper_node::SERVICE_PLACE_NODE;
 
 typedef actionlib::SimpleActionClient<s8_wall_follower_controller::FollowWallAction> follow_wall_client;
 typedef s8::wall_follower_controller_node::FollowWallFinishedReason FollowWallFinishedReason;
@@ -109,6 +112,7 @@ class Explorer : public s8::Node {
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
     actionlib::SimpleActionServer<s8_explorer::ExploreAction> explore_action_server;
     follow_wall_client follow_wall_action;
+    ros::ServiceClient place_node_client;
     FollowingWall following_wall;
     double front_distance_treshold_near;
     double front_distance_treshold_far;
@@ -139,8 +143,9 @@ public:
         actual_twist_subscriber = nh.subscribe<geometry_msgs::Twist>(TOPIC_ACTUAL_TWIST, 1, &Explorer::actual_twist_callback, this);
         twist_publisher = nh.advertise<geometry_msgs::Twist>(TOPIC_TWIST, 1);
 
-        explore_action_server.registerPreemptCallback(boost::bind(&Explorer::explore_action_cancel_callback, this));
+        place_node_client = nh.serviceClient<s8_mapper::PlaceNode>(SERVICE_PLACE_NODE, true);
 
+        explore_action_server.registerPreemptCallback(boost::bind(&Explorer::explore_action_cancel_callback, this));
 
         ROS_INFO("Waiting for turn action server...");
         turn_action.waitForServer();
@@ -533,6 +538,16 @@ private:
         const double diff = farest - nearest;
         const double max_speed = 0.2;
         return (diff * actual_v / max_speed) + nearest;
+    }
+
+    void place_node(double x, double y, int value) {
+        s8_mapper::PlaceNode pn;
+        pn.request.x = x;
+        pn.request.y = y;
+        pn.request.value = value;
+        if(!place_node_client.call(pn)) {
+            ROS_FATAL("Failed to call place node.");
+        }
     }
 
     void init_params() {
