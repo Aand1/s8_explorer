@@ -207,7 +207,7 @@ private:
             print_extra += "(" + to_string(following_wall) + ")";
         }
         
-        //ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
+        ROS_INFO("State transition: %s -> %s %s", state_manager.state_to_string(previous_state).c_str(), state_manager.state_to_string(current_state).c_str(), print_extra.c_str());
 
         if(current_state == State::FOLLOWING_WALL_PREEMPTED) {
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
@@ -235,13 +235,13 @@ private:
             if(follow_side == FollowingWall::NONE) {
                 //No walls in range. Just stop for now.
                 //TODO: Should do something else in the future
-                //ROS_INFO("I dont know what to do, so I'm just going forward!");
+                ROS_INFO("I dont know what to do, so I'm just going forward!");
 
                 go_straight([this]() {
                     return !is_left_wall_present() && !is_right_wall_present() && !is_front_obstacle_too_close() && !is_side_wall_over_threshold(left_back, left_front) && !is_side_wall_over_threshold(right_back, right_front);
                 });
 
-                stop();
+                //stop();
 
                 //ROS_INFO("get wall: %d", get_wall_to_follow());
             }
@@ -261,7 +261,7 @@ private:
             if(is_front_obstacle_too_close()) {
                 //There is a wall to follow but we have an object to the front. So turn away from the wall.
                 ROS_INFO("Stopping is_front_obstacle_too_close()");
-                stop();
+                //stop();
                 turn(RotateDirection(-follow_side) * TURN_DEGREES_90);
             }
 
@@ -369,6 +369,7 @@ private:
     }
 
     void turn(int degrees) {
+        stop();
         ROS_INFO("Turning %s", to_string(RotateDirection(sign(degrees))).c_str());
         state_manager.set_state(StateManager::State::TURNING);
 
