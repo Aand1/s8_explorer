@@ -2,7 +2,6 @@
 
 #include <s8_explorer/explorer_node.h>
 #include <actionlib/client/simple_action_client.h>
-#include <actionlib/server/simple_action_server.h>
 #include <s8_common_node/Node.h>
 #include <s8_utils/math.h>
 
@@ -11,9 +10,6 @@
 #include <s8_wall_follower_controller/FollowWallAction.h>
 #include <s8_msgs/IRDistances.h>
 #include <geometry_msgs/Twist.h>
-#include <s8_explorer/ExploreAction.h>
-#include <s8_mapper/PlaceNode.h>
-#include <s8_mapper/mapper_node.h>
 
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR     "front_distance_treshold_near"
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR      "front_distance_treshold_far"
@@ -22,7 +18,7 @@
 #define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR      "side_distance_treshold_near"
 #define PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR       "side_distance_treshold_far"
 #define PARAM_NAME_GO_STRAIGHT_VELOCITY             "go_straight_velocity"
-#define PARAM_NAME_THRESHOLD_TOLERANCE              "threshold_tolerance"
+#define PARAM_NAME_THRESHOLD_TOLERANCE		    "threshold_tolerance"
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
@@ -31,7 +27,7 @@
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR   0.04
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.2
 #define PARAM_DEFAULT_GO_STRAIGHT_VELOCITY          0.2
-#define PARAM_DEFAULT_THRESHOLD_TOLERANCE           0.15
+#define PARAM_DEFAULT_THRESHOLD_TOLERANCE	    0.15
 
 #define ACTION_STOP_TIMEOUT                         30.0
 #define ACTION_TURN_TIMEOUT                         30.0
@@ -41,7 +37,6 @@
 using namespace s8::explorer_node;
 using namespace s8::utils::math;
 using s8::turner_node::to_string;
-using s8::mapper_node::SERVICE_PLACE_NODE;
 
 typedef actionlib::SimpleActionClient<s8_wall_follower_controller::FollowWallAction> follow_wall_client;
 typedef s8::wall_follower_controller_node::FollowWallFinishedReason FollowWallFinishedReason;
@@ -112,9 +107,7 @@ class Explorer : public s8::Node {
     ros::Publisher twist_publisher;
     actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
-    actionlib::SimpleActionServer<s8_explorer::ExploreAction> explore_action_server;
     follow_wall_client follow_wall_action;
-    ros::ServiceClient place_node_client;
     FollowingWall following_wall;
     double front_distance_treshold_near;
     double front_distance_treshold_far;
@@ -135,18 +128,14 @@ class Explorer : public s8::Node {
     double actual_v;
     double actual_w;
     bool first;
-    bool explore;
-    bool preempted;
 
 public:
-    Explorer() : explore(false), preempted(false), first(false), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE), explore_action_server(nh, ACTION_EXPLORE, boost::bind(&Explorer::action_execute_explore_callback, this, _1), false) {
+    Explorer() : first(true), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
         actual_twist_subscriber = nh.subscribe<geometry_msgs::Twist>(TOPIC_ACTUAL_TWIST, 1, &Explorer::actual_twist_callback, this);
         twist_publisher = nh.advertise<geometry_msgs::Twist>(TOPIC_TWIST, 1);
-
-        place_node_client = nh.serviceClient<s8_mapper::PlaceNode>(SERVICE_PLACE_NODE, true);
 
         ROS_INFO("Waiting for turn action server...");
         turn_action.waitForServer();
@@ -160,15 +149,11 @@ public:
         follow_wall_action.waitForServer();
         ROS_INFO("Connected to follow_wall action server!");
 
-        explore_action_server.registerPreemptCallback(boost::bind(&Explorer::explore_action_cancel_callback, this));
-        explore_action_server.start();
-
         ROS_INFO("");
     }
 
 private:
     void initial_move() {
-        ROS_INFO("initial move");
         /*int dir = 1;
         while(ros::ok()) {
             turn(dir * TURN_DEGREES_90);
@@ -189,10 +174,6 @@ private:
     void on_state_changed(StateManager::State previous_state, StateManager::State current_state) {
         typedef StateManager::State State;
 
-        if(!explore) {
-            return;
-        }
-
         std::string print_extra = "";
 
         if(state_manager.get_state() == StateManager::State::FOLLOWING_WALL) {
@@ -205,12 +186,13 @@ private:
             //Wall following has been cancelled. Probably because something is in front of the robot (but it might have been cancelled by other reasons).
 
             stop();
+	   if ()
             turn(RotateDirection(-following_wall) * TURN_DEGREES_90);
             follow_wall(following_wall);
         } else if(current_state == State::FOLLOWING_WALL_OUT_OF_RANGE) {
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
 
-            //stop();
+           // stop();
 
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
             FollowingWall follow_side = get_wall_to_follow();
@@ -252,60 +234,13 @@ private:
             //Keep following wall since there is no other reason to do something else.
             follow_wall(following_wall);
         } else if(current_state == State::TURNING_TIMED_OUT) {
-            ROS_WARN("Turning action timed out");
+	    ROS_WARN("Turning action timed out");
             stop();
         } else if(current_state == State::STOPPING_TIMED_OUT) {
 
         } else if(current_state == State::STILL) {
 
         }
-    }
-
-    void action_execute_explore_callback(const s8_explorer::ExploreGoalConstPtr & explore_goal) {
-        ROS_INFO("STARTED: Explore action started!");
-        explore = true;
-        preempted = false;
-        first = true;
-
-        const int timeout = 60 * 5; // 5 min.
-        const int rate_hz = 10;
-        ros::Rate rate(rate_hz);
-        int ticks = 0;
-
-        while(ros::ok() && explore && ticks <= timeout * rate_hz) {
-            rate.sleep();
-            ticks++;
-        }
-
-        if(ticks >= timeout * rate_hz) {
-            stop();
-            s8_explorer::ExploreResult explore_action_result;
-            ROS_INFO("TIMEOUT: Explore action timed out.");
-            explore_action_server.setAborted(explore_action_result);
-        } else {
-            if(preempted) {
-                s8_explorer::ExploreResult explore_action_result;
-                ROS_INFO("PREEMPTED: Explore action preempted.");
-                explore_action_server.setPreempted(explore_action_result);
-            } else {
-                stop();
-                s8_explorer::ExploreResult explore_action_result;
-                ROS_INFO("FAILED: Object alignment action failed.");
-                explore_action_server.setAborted(explore_action_result);
-            }
-        }
-    }
-
-    void explore_action_cancel_callback() {
-        //TODO: Need to cancel wall follower if running.
-        if(is_following_wall()) {
-            follow_wall_action.cancelGoal();
-        } else if(is_going_straight()) {
-            should_stop_go_straight = true;
-        }
-
-        preempted = true;
-        explore = false;
     }
 
     void follow_wall(FollowingWall wall) {
@@ -317,11 +252,6 @@ private:
         }
 
         state_manager.set_state(StateManager::State::FOLLOWING_WALL);
-
-        /*if(is_front_obstacle_too_close()) {
-            state_manager.set_state(StateManager::State::FOLLOWING_WALL_PREEMPTED);
-            return;
-        }*/
 
         s8_wall_follower_controller::FollowWallGoal goal;
         goal.wall_to_follow = wall;
@@ -409,16 +339,16 @@ private:
             initial_move();
         }
 
-        if(!is_following_wall() && !is_going_straight()) {
+	    if(!is_following_wall() && !is_going_straight()) {
             return;
         }
 
         if(is_front_obstacle_too_close()) {
      
             //TODO: Need to cancel wall follower if running.
-            if(is_following_wall()) {
-                follow_wall_action.cancelGoal();
-                ROS_INFO("Wall Following goal cancelled due to wall too close");
+	        if(is_following_wall()) {
+	            follow_wall_action.cancelGoal();
+		    ROS_INFO("Wall Following goal cancelled due to wall too close");
             } else if(is_going_straight()) {
                 should_stop_go_straight = true;
             }
@@ -500,7 +430,7 @@ private:
     }
 
     bool is_side_wall_over_threshold(double back, double front){
-    return is_side_wall_present(back*(1+threshold_tolerance), front*(1+threshold_tolerance));
+	return is_side_wall_present(back*(1+threshold_tolerance), front*(1+threshold_tolerance));
     }
 
 
@@ -552,17 +482,8 @@ private:
         const double farest = front_distance_stop_max;
         const double diff = farest - nearest;
         const double max_speed = 0.2;
-        return (diff * actual_v / max_speed) + nearest;
-    }
-
-    void place_node(double x, double y, int value) {
-        s8_mapper::PlaceNode pn;
-        pn.request.x = x;
-        pn.request.y = y;
-        pn.request.value = value;
-        if(!place_node_client.call(pn)) {
-            ROS_FATAL("Failed to call place node.");
-        }
+       // return (diff * actual_v / max_speed) + nearest;
+	return (farest);
     }
 
     void init_params() {
@@ -573,8 +494,8 @@ private:
         add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_NEAR, side_distance_treshold_near, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR);
         add_param(PARAM_NAME_SIDE_DISTANCE_TRESHOLD_FAR, side_distance_treshold_far, PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR);
         add_param(PARAM_NAME_GO_STRAIGHT_VELOCITY, go_straight_velocity, PARAM_DEFAULT_GO_STRAIGHT_VELOCITY);
-        add_param(PARAM_NAME_THRESHOLD_TOLERANCE, threshold_tolerance, PARAM_DEFAULT_THRESHOLD_TOLERANCE); 
-    }
+	add_param(PARAM_NAME_THRESHOLD_TOLERANCE, threshold_tolerance, PARAM_DEFAULT_THRESHOLD_TOLERANCE); 
+}
 };
 
 int main(int argc, char **argv) {

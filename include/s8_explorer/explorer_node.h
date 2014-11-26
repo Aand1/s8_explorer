@@ -17,7 +17,7 @@ namespace s8 {
         const std::string ACTION_STOP =                     s8::motor_controller_node::ACTION_STOP;
         const std::string ACTION_TURN =                     s8::turner_node::ACTION_TURN;
         const std::string ACTION_FOLLOW_WALL =              s8::wall_follower_controller_node::ACTION_FOLLOW_WALL;
-        const std::string ACTION_EXPLORE =                  NODE_NAME + "/explore";
+        const std::string ACTION_EXPLORE =                  "/s8/explore";
 
         enum FollowingWall {
             LEFT = s8::wall_follower_controller_node::WallToFollow::LEFT,
