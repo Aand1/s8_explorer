@@ -14,6 +14,7 @@
 #include <s8_explorer/ExploreAction.h>
 #include <s8_mapper/PlaceNode.h>
 #include <s8_mapper/mapper_node.h>
+#include <s8_msgs/DistPose.h>
 
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR     "front_distance_treshold_near"
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR      "front_distance_treshold_far"
@@ -37,6 +38,8 @@
 #define ACTION_TURN_TIMEOUT                         30.0
 
 #define TURN_DEGREES_90                             90
+
+#define TOPO_NODE_FREE      1 << 1
 
 using namespace s8::explorer_node;
 using namespace s8::utils::math;
@@ -224,10 +227,12 @@ private:
             }
             if (is_left_wall_present() || is_right_wall_present()){
                 ROS_INFO("SEE A WALL");
+                place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
                 turn(RotateDirection(-following_wall) * TURN_DEGREES_90);
             }
             else{
                 ROS_INFO("DONT SEE A WALL");
+                place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
                 turn(RotateDirection(following_wall) * TURN_DEGREES_90);
             }
             follow_wall(following_wall);
@@ -267,7 +272,8 @@ private:
             if(is_front_obstacle_too_close()) {
                 //There is a wall to follow but we have an object to the front. So turn away from the wall.
                 ROS_INFO("Stopping is_front_obstacle_too_close()");
-                //stop();
+                stop();
+                place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
                 turn(RotateDirection(-follow_side) * TURN_DEGREES_90);
             }
 
@@ -586,11 +592,20 @@ private:
         return (diff * actual_v / max_speed) + nearest;
     }
 
-    void place_node(double x, double y, int value) {
+    void place_node(double x, double y, int value, bool left, bool forward, bool right) {
         s8_mapper::PlaceNode pn;
         pn.request.x = x;
         pn.request.y = y;
         pn.request.value = value;
+        pn.request.isWallLeft = left;
+        pn.request.isWallForward = forward;
+        pn.request.isWallRight = right;
+        if (left == true)
+            ROS_INFO("left true");
+        if (forward == true)
+            ROS_INFO("forward true");
+        if (right == true)
+            ROS_INFO("right true");
         if(!place_node_client.call(pn)) {
             ROS_FATAL("Failed to call place node.");
         }
