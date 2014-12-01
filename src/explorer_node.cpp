@@ -324,7 +324,7 @@ private:
             } else {
                 stop();
                 s8_explorer::ExploreResult explore_action_result;
-                ROS_INFO("FAILED: Object alignment action failed.");
+                ROS_INFO("FAILED: Explore action failed.");
                 explore_action_server.setAborted(explore_action_result);
             }
         }
