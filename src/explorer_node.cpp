@@ -140,9 +140,10 @@ class Explorer : public s8::Node {
     bool first;
     bool explore;
     bool preempted;
+    bool merged_node;
 
 public:
-    Explorer() : explore(false), preempted(false), first(false), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE), explore_action_server(nh, ACTION_EXPLORE, boost::bind(&Explorer::action_execute_explore_callback, this, _1), false) {
+    Explorer() : merged_node(false), explore(false), preempted(false), first(false), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE), explore_action_server(nh, ACTION_EXPLORE, boost::bind(&Explorer::action_execute_explore_callback, this, _1), false) {
         init_params();
         print_params();
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
@@ -300,13 +301,14 @@ private:
         explore = true;
         preempted = false;
         first = true;
+        merged_node = false;
 
         const int timeout = 60 * 5; // 5 min.
         const int rate_hz = 10;
         ros::Rate rate(rate_hz);
         int ticks = 0;
 
-        while(ros::ok() && explore && ticks <= timeout * rate_hz) {
+        while(ros::ok() && explore && ticks <= timeout * rate_hz && !merged_node) {
             rate.sleep();
             ticks++;
         }
@@ -314,16 +316,24 @@ private:
         if(ticks >= timeout * rate_hz) {
             stop();
             s8_explorer::ExploreResult explore_action_result;
+            explore_action_result.reason = ExploreFinishedReason::TIMEOUT;
             ROS_INFO("TIMEOUT: Explore action timed out.");
             explore_action_server.setAborted(explore_action_result);
         } else {
             if(preempted) {
                 s8_explorer::ExploreResult explore_action_result;
+                explore_action_result.reason = ExploreFinishedReason::PREEMPTED;
                 ROS_INFO("PREEMPTED: Explore action preempted.");
                 explore_action_server.setPreempted(explore_action_result);
+            } else if(merged_node) {
+                s8_explorer::ExploreResult explore_action_result;
+                explore_action_result.reason = ExploreFinishedReason::REVISITED;
+                ROS_INFO("PREEMPTED: Explore action preempted.");
+                explore_action_server.setAborted(explore_action_result);
             } else {
                 stop();
                 s8_explorer::ExploreResult explore_action_result;
+                explore_action_result.reason = ExploreFinishedReason::FAILED;
                 ROS_INFO("FAILED: Explore action failed.");
                 explore_action_server.setAborted(explore_action_result);
             }
@@ -609,6 +619,9 @@ private:
         if(!place_node_client.call(pn)) {
             ROS_FATAL("Failed to call place node.");
         }
+
+        //Check if the node was merged or not. 
+        //merged_node should be set to true if it was.
     }
 
     void init_params() {

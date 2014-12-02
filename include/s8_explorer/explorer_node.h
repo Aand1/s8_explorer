@@ -19,6 +19,13 @@ namespace s8 {
         const std::string ACTION_FOLLOW_WALL =              s8::wall_follower_controller_node::ACTION_FOLLOW_WALL;
         const std::string ACTION_EXPLORE =                  "/s8/explore";
 
+        enum ExploreFinishedReason {
+            TIMEOUT,
+            PREEMPTED,
+            REVISITED,
+            FAILED
+        };
+
         enum FollowingWall {
             LEFT = s8::wall_follower_controller_node::WallToFollow::LEFT,
             NONE = 0,

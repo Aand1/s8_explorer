@@ -3,6 +3,7 @@ bool explore
 ---
 #result
 bool explored
+int32 reason
 ---
 #feedback
 bool explored
