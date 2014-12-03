@@ -27,11 +27,11 @@
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
-#define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MAX       0.25
+#define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MAX       0.26
 #define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MIN       0.18
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR   0.04
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.2
-#define PARAM_DEFAULT_GO_STRAIGHT_VELOCITY          0.2
+#define PARAM_DEFAULT_GO_STRAIGHT_VELOCITY          0.15
 #define PARAM_DEFAULT_THRESHOLD_TOLERANCE           0.15
 
 #define ACTION_STOP_TIMEOUT                         30.0
@@ -177,7 +177,8 @@ private:
         ROS_INFO("initial move");
 
         if(just_started){
-            place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
+            ROS_INFO("FIRST NODE");
+	    place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present());
             just_started = false;
         }
         
@@ -606,7 +607,7 @@ private:
         const double nearest = front_distance_stop_min;
         const double farest = front_distance_stop_max;
         const double diff = farest - nearest;
-        const double max_speed = 0.2;
+        const double max_speed = 0.15;
         return (diff * actual_v / max_speed) + nearest;
     }
 
