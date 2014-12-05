@@ -178,8 +178,11 @@ private:
 
         if(just_started){
             ROS_INFO("FIRST NODE");
-	    place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present());
+            place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present());
             just_started = false;
+            if(merged_node) {
+                return;
+            }
         }
         
         /*int dir = 1;
@@ -238,11 +241,17 @@ private:
             if (is_left_wall_present() || is_right_wall_present()){
                 ROS_INFO("SEE A WALL");
                 place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
+                if(merged_node) {
+                    return;
+                }
                 turn(RotateDirection(-following_wall) * TURN_DEGREES_90);
             }
             else{
                 ROS_INFO("DONT SEE A WALL");
                 place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
+                if(merged_node) {
+                    return;
+                }
                 turn(RotateDirection(following_wall) * TURN_DEGREES_90);
             }
             follow_wall(following_wall);
@@ -284,6 +293,9 @@ private:
                 ROS_INFO("Stopping is_front_obstacle_too_close()");
                 stop();
                 place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
+                if(merged_node) {
+                    return;
+                }
                 turn(RotateDirection(-follow_side) * TURN_DEGREES_90);
             }
 
@@ -627,10 +639,19 @@ private:
             ROS_INFO("right true");
         if(!place_node_client.call(pn)) {
             ROS_FATAL("Failed to call place node.");
+            return;
         }
 
-        //Check if the node was merged or not. 
-        //merged_node should be set to true if it was.
+        if(!pn.response.placed) {
+            ROS_INFO("Node was merged. Been here before. Stop exploring.");
+            merged_node = true;
+            explore = false;
+            if(is_following_wall()) {
+                follow_wall_action.cancelGoal();
+            } else if(is_going_straight()) {
+                should_stop_go_straight = true;
+            }
+        }
     }
 
     void init_params() {
