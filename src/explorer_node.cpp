@@ -5,6 +5,8 @@
 #include <actionlib/server/simple_action_server.h>
 #include <s8_common_node/Node.h>
 #include <s8_utils/math.h>
+#include <s8_pose/pose_node.h>
+#include <geometry_msgs/Pose2D.h>
 
 #include <s8_turner/TurnAction.h>
 #include <s8_motor_controller/StopAction.h>
@@ -41,10 +43,17 @@
 
 #define TOPO_NODE_FREE      1 << 1
 
+#define TOPO_EAST                   -1 * M_PI / 4
+#define TOPO_NORTH                  1 * M_PI / 4
+#define TOPO_WEST                   3 * M_PI / 4
+#define TOPO_SOUTH                  -3 * M_PI / 4
+#define TOPIC_POSE                  s8::pose_node::TOPIC_POSE_SIMPLE
+
 using namespace s8::explorer_node;
 using namespace s8::utils::math;
 using s8::turner_node::to_string;
 using s8::mapper_node::SERVICE_PLACE_NODE;
+using namespace s8::mapper_node;
 
 typedef actionlib::SimpleActionClient<s8_wall_follower_controller::FollowWallAction> follow_wall_client;
 typedef s8::wall_follower_controller_node::FollowWallFinishedReason FollowWallFinishedReason;
@@ -113,6 +122,7 @@ class Explorer : public s8::Node {
     ros::Subscriber distances_subscriber;
     ros::Subscriber actual_twist_subscriber;
     ros::Publisher twist_publisher;
+    ros::Subscriber pose_subscriber;
     actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
     actionlib::SimpleActionServer<s8_explorer::ExploreAction> explore_action_server;
@@ -133,6 +143,7 @@ class Explorer : public s8::Node {
     double right_back;
     double right_front;
     double go_straight_velocity;
+    RobotPose robot_pose;
     StateManager state_manager;
     bool should_stop_go_straight;
     double actual_v;
@@ -151,6 +162,7 @@ public:
         distances_subscriber = nh.subscribe<s8_msgs::IRDistances>(TOPIC_DISTANCES, 1, &Explorer::distances_callback, this);
         actual_twist_subscriber = nh.subscribe<geometry_msgs::Twist>(TOPIC_ACTUAL_TWIST, 1, &Explorer::actual_twist_callback, this);
         twist_publisher = nh.advertise<geometry_msgs::Twist>(TOPIC_TWIST, 1);
+        pose_subscriber = nh.subscribe<geometry_msgs::Pose2D>(TOPIC_POSE, 1, &Explorer::pose_callback, this);
 
         place_node_client = nh.serviceClient<s8_mapper::PlaceNode>(SERVICE_PLACE_NODE, true);
         just_started = true;
@@ -178,7 +190,7 @@ private:
 
         if(just_started){
             ROS_INFO("FIRST NODE");
-            place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present());
+            place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present(), true);
             just_started = false;
             if(merged_node) {
                 return;
@@ -246,15 +258,17 @@ private:
             }
             if (is_left_wall_present() || is_right_wall_present()){
                 ROS_INFO("SEE A WALL");
-                place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
+                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present(), true);
                 if(merged_node) {
+                    ROS_INFO("MERGED NODE");
                     return;
                 }
+                ROS_INFO("SHOULD TURN");
                 turn(RotateDirection(-following_wall) * TURN_DEGREES_90);
             }
             else{
                 ROS_INFO("DONT SEE A WALL");
-                place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
+                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present(), true);
                 if(merged_node) {
                     return;
                 }
@@ -265,7 +279,8 @@ private:
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
             ROS_INFO("OUT OF RANGE");
             //stop();
-
+            place_node(0,0,0.15,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present(), false);
+            ROS_INFO("PLACED A NODE");
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
             FollowingWall follow_side = get_wall_to_follow();
             if(follow_side == FollowingWall::NONE) {
@@ -298,7 +313,7 @@ private:
                 //There is a wall to follow but we have an object to the front. So turn away from the wall.
                 ROS_INFO("Stopping is_front_obstacle_too_close()");
                 stop();
-                place_node(0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present());
+                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present(), true);
                 if(merged_node) {
                     return;
                 }
@@ -377,6 +392,22 @@ private:
 
         preempted = true;
         explore = false;
+    }
+
+    void pose_callback(const geometry_msgs::Pose2D::ConstPtr & pose) {
+        robot_pose.position.x = pose->x;
+        robot_pose.position.y = pose->y;
+        robot_pose.rotation = radians_to_degrees(pose->theta);
+        
+        // Make sure that rotation stays in the range [0, 360]
+        if (robot_pose.rotation > 360){
+            int toRange = floor(robot_pose.rotation/360);
+            robot_pose.rotation = robot_pose.rotation - toRange*360; 
+        }
+        else if (robot_pose.rotation < 0){
+            int toRange = ceil(robot_pose.rotation/360);
+            robot_pose.rotation = robot_pose.rotation + (toRange+1)*360;    
+        }
     }
 
     void follow_wall(FollowingWall wall) {
@@ -538,12 +569,26 @@ private:
         state_manager.set_state(StateManager::State::GOING_STRAIGHT);
         geometry_msgs::Twist twist;
         twist.linear.x = go_straight_velocity;
+        int heading = get_current_heading();
 
         should_stop_go_straight = false;
 
         ros::Rate loop_rate(25);
         while(condition() && ros::ok() && !should_stop_go_straight) {
             ros::spinOnce();
+            int rotation = (int)robot_pose.rotation % 360;
+            if (rotation < 0){
+                rotation += 360;
+            }
+            ROS_INFO("ROBOT POSE %d", rotation );
+
+            int diff = heading - rotation;
+            if (diff <= -45 )
+                diff += 360; 
+            ROS_INFO("DIFF %d", diff);
+            double alpha = 1.0/45.0;
+            twist.angular.z = alpha*(double)diff;
+            ROS_INFO("alpha: %lf, diff: %lf",alpha, (double)diff);
             twist_publisher.publish(twist);
             loop_rate.sleep();
         }
@@ -629,14 +674,37 @@ private:
         return (diff * actual_v / max_speed) + nearest;
     }
 
-    void place_node(double x, double y, int value, bool left, bool forward, bool right) {
+    int get_current_heading(){
+        ROS_INFO("REAL HEADING: %lf", robot_pose.rotation);
+        if (robot_pose.rotation >= 315 || robot_pose.rotation < 45){
+            ROS_INFO("HEADING EAST");
+            return 0;
+        }
+        else if (robot_pose.rotation >= 45 && robot_pose.rotation < 135){
+            ROS_INFO("HEADING NORTH");
+            return 90;
+        }
+        else if (robot_pose.rotation >= 135 && robot_pose.rotation < 225){
+            ROS_INFO("HEADING WEST");
+            return 180;
+        }
+        else{
+            ROS_INFO("HEADING SOUTH");
+            return 270;
+        }
+    }
+
+    void place_node(double x, double y, double dist, double theta, int value, bool left, bool forward, bool right, bool isTurn) {
         s8_mapper::PlaceNode pn;
         pn.request.x = x;
         pn.request.y = y;
+        pn.request.dist = dist;
+        pn.request.theta = theta;
         pn.request.value = value;
         pn.request.isWallLeft = left;
         pn.request.isWallForward = forward;
         pn.request.isWallRight = right;
+        pn.request.isTurn = isTurn;
         if (left == true)
             ROS_INFO("left true");
         if (forward == true)
@@ -673,7 +741,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-    ros::init(argc, argv, NODE_NAME);
+    ros::init(argc, argv, s8::explorer_node::NODE_NAME);
     Explorer explorer;
     ros::spin();
     return 0;
