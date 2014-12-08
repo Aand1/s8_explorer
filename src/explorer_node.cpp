@@ -32,7 +32,7 @@
 #define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MAX       0.23
 #define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MIN       0.14
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR   0.04
-#define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.25
+#define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.15
 #define PARAM_DEFAULT_GO_STRAIGHT_VELOCITY          0.15
 #define PARAM_DEFAULT_THRESHOLD_TOLERANCE           0.15
 
@@ -206,9 +206,12 @@ private:
         }*/
 
 
-        /*if (is_front_obstacle_too_close()) {
+        if (is_front_obstacle_too_close() && is_right_wall_present()) {
             turn(RotateDirection(1) * TURN_DEGREES_90);
-        }*/
+        } else if (is_front_obstacle_too_close()){
+            turn(RotateDirection(-1) * TURN_DEGREES_90);
+        }
+        else{
             if(is_right_wall_present()) {
                 follow_wall(FollowingWall::RIGHT);
             } else if(is_left_wall_present()) {
@@ -216,6 +219,7 @@ private:
             } else {
                 state_manager.set_state(StateManager::State::FOLLOWING_WALL_OUT_OF_RANGE);
             }
+        }
         // Ugly workaround TODO make right turning direction
         
         /*
@@ -574,6 +578,7 @@ private:
         should_stop_go_straight = false;
 
         ros::Rate loop_rate(25);
+        ROS_INFO("IM GOING STRAIGHT");
         while(condition() && ros::ok() && !should_stop_go_straight) {
             ros::spinOnce();
             int rotation = (int)robot_pose.rotation % 360;
