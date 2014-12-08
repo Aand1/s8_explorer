@@ -193,13 +193,19 @@ private:
             dir *= -1;
         }*/
 
-        if(is_right_wall_present()) {
-            follow_wall(FollowingWall::RIGHT);
-        } else if(is_left_wall_present()) {
-            follow_wall(FollowingWall::LEFT);
-        } else {
-            state_manager.set_state(StateManager::State::FOLLOWING_WALL_OUT_OF_RANGE);
-        }
+
+        /*if (is_front_obstacle_too_close()) {
+            turn(RotateDirection(1) * TURN_DEGREES_90);
+        }*/
+            if(is_right_wall_present()) {
+                follow_wall(FollowingWall::RIGHT);
+            } else if(is_left_wall_present()) {
+                follow_wall(FollowingWall::LEFT);
+            } else {
+                state_manager.set_state(StateManager::State::FOLLOWING_WALL_OUT_OF_RANGE);
+            }
+        // Ugly workaround TODO make right turning direction
+        
         /*
             go_straight([this,front_left, front_right]() {
                 ros::spinOnce();
