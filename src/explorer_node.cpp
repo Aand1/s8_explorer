@@ -17,6 +17,7 @@
 #include <s8_mapper/PlaceNode.h>
 #include <s8_mapper/mapper_node.h>
 #include <s8_msgs/DistPose.h>
+#include <s8_msgs/isFrontWall.h>
 
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_NEAR     "front_distance_treshold_near"
 #define PARAM_NAME_FRONT_DISTANCE_TRESHOLD_FAR      "front_distance_treshold_far"
@@ -29,7 +30,7 @@
 
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_NEAR  0.10
 #define PARAM_DEFAULT_FRONT_DISTANCE_TRESHOLD_FAR   0.4
-#define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MAX       0.23
+#define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MAX       0.26
 #define PARAM_DEFAULT_FRONT_DISTANCE_STOP_MIN       0.14
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_NEAR   0.04
 #define PARAM_DEFAULT_SIDE_DISTANCE_TRESHOLD_FAR    0.15
@@ -48,6 +49,7 @@
 #define TOPO_WEST                   3 * M_PI / 4
 #define TOPO_SOUTH                  -3 * M_PI / 4
 #define TOPIC_POSE                  s8::pose_node::TOPIC_POSE_SIMPLE
+#define TOPIC_IS_FRONT_WALL         "/s8/isFrontWall"
 
 using namespace s8::explorer_node;
 using namespace s8::utils::math;
@@ -123,6 +125,7 @@ class Explorer : public s8::Node {
     ros::Subscriber actual_twist_subscriber;
     ros::Publisher twist_publisher;
     ros::Subscriber pose_subscriber;
+    ros::Subscriber wall_subscriber;
     actionlib::SimpleActionClient<s8_turner::TurnAction> turn_action;
     actionlib::SimpleActionClient<s8_motor_controller::StopAction> stop_action;
     actionlib::SimpleActionServer<s8_explorer::ExploreAction> explore_action_server;
@@ -145,6 +148,8 @@ class Explorer : public s8::Node {
     double go_straight_velocity;
     RobotPose robot_pose;
     StateManager state_manager;
+    bool is_front_wall;
+    double front_wall_distance;
     bool should_stop_go_straight;
     double actual_v;
     double actual_w;
@@ -163,7 +168,9 @@ public:
         actual_twist_subscriber = nh.subscribe<geometry_msgs::Twist>(TOPIC_ACTUAL_TWIST, 1, &Explorer::actual_twist_callback, this);
         twist_publisher = nh.advertise<geometry_msgs::Twist>(TOPIC_TWIST, 1);
         pose_subscriber = nh.subscribe<geometry_msgs::Pose2D>(TOPIC_POSE, 1, &Explorer::pose_callback, this);
-
+        wall_subscriber = nh.subscribe<s8_msgs::isFrontWall>(TOPIC_IS_FRONT_WALL, 1, &Explorer::wall_callback, this);
+        is_front_wall = false;
+        front_wall_distance = 0.0;
         place_node_client = nh.serviceClient<s8_mapper::PlaceNode>(SERVICE_PLACE_NODE, true);
         just_started = true;
         ROS_INFO("Waiting for turn action server...");
@@ -206,19 +213,12 @@ private:
         }*/
 
 
-        if (is_front_obstacle_too_close() && is_right_wall_present()) {
-            turn(RotateDirection(1) * TURN_DEGREES_90);
-        } else if (is_front_obstacle_too_close()){
-            turn(RotateDirection(-1) * TURN_DEGREES_90);
-        }
-        else{
-            if(is_right_wall_present()) {
-                follow_wall(FollowingWall::RIGHT);
-            } else if(is_left_wall_present()) {
-                follow_wall(FollowingWall::LEFT);
-            } else {
-                state_manager.set_state(StateManager::State::FOLLOWING_WALL_OUT_OF_RANGE);
-            }
+        if(is_right_wall_present()) {
+            follow_wall(FollowingWall::RIGHT);
+        } else if(is_left_wall_present()) {
+            follow_wall(FollowingWall::LEFT);
+        } else {
+            state_manager.set_state(StateManager::State::FOLLOWING_WALL_OUT_OF_RANGE);
         }
         // Ugly workaround TODO make right turning direction
         
@@ -283,7 +283,7 @@ private:
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
             ROS_INFO("OUT OF RANGE");
             //stop();
-            place_node(0,0,0.15,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present(), false);
+            place_node(0,0,0.25,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present(), false);
             ROS_INFO("PLACED A NODE");
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
             FollowingWall follow_side = get_wall_to_follow();
@@ -414,6 +414,11 @@ private:
         }
     }
 
+    void wall_callback(const s8_msgs::isFrontWall::ConstPtr & wall){
+        front_wall_distance = wall->distToFrontWall;
+        is_front_wall       = wall->isFrontWall;
+    }
+
     void follow_wall(FollowingWall wall) {
         following_wall = wall;
 
@@ -443,6 +448,10 @@ private:
             break;
         case FollowWallFinishedReason::PREEMPTED:
             state_manager.set_state(StateManager::State::FOLLOWING_WALL_PREEMPTED);
+            if(!explore && preempted) {
+                ROS_INFO("Explore action was preempted and wall following has been cancelled. Stopping...");
+                stop();
+            }
             break;
         case FollowWallFinishedReason::TIMEOUT:
             state_manager.set_state(StateManager::State::FOLLOWING_WALL_TIMED_OUT);
@@ -597,6 +606,11 @@ private:
             twist_publisher.publish(twist);
             loop_rate.sleep();
         }
+
+        if(!explore && preempted) {
+            ROS_INFO("Explore action has been preempted and go straight has been cancelled. Stopping...");
+            stop();
+        }
     }
 
     bool is_inside_treshold(double value, double treshold_near, double treshold_far) {
@@ -629,7 +643,7 @@ private:
 
 
     bool is_front_obstacle_present() {
-        auto is = is_front_inside_treshold(front_left) || is_front_inside_treshold(front_right);
+        auto is = is_front_inside_treshold(front_left) || is_front_inside_treshold(front_right) || is_front_wall;
 
         if(is) {
             //ROS_INFO("Wall ahead! left: %.2lf, right: %.2lf", front_left, front_right);
@@ -643,10 +657,13 @@ private:
             double treshold = get_speed_calculated_distance_stop();
             //ROS_INFO("Front stop treshold: %.2lf", treshold);
 
-            auto is = (std::abs(front_left) <= treshold || std::abs(front_right) <= treshold);
+            auto is = (std::abs(front_left) <= treshold || std::abs(front_right) <= treshold || is_front_wall);
     
             if(is) {
                 ROS_INFO("Too close to obstacle!");
+            }
+            if(is_front_wall){
+                ROS_FATAL("CAMERA DETECTED WALL");
             }
 
             return is;
