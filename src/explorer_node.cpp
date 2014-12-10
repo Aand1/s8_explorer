@@ -44,6 +44,8 @@
 
 #define TOPO_NODE_FREE      1 << 1
 
+#define NODE_WALL_SIDE_TRESHOLD                     0.25
+
 #define TOPO_EAST                   -1 * M_PI / 4
 #define TOPO_NORTH                  1 * M_PI / 4
 #define TOPO_WEST                   3 * M_PI / 4
@@ -197,7 +199,7 @@ private:
 
         if(just_started){
             ROS_INFO("FIRST NODE");
-            place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present(), true);
+            place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(NODE_WALL_SIDE_TRESHOLD), false, is_right_wall_present(NODE_WALL_SIDE_TRESHOLD), true);
             just_started = false;
             if(merged_node) {
                 return;
@@ -262,7 +264,7 @@ private:
             }
             if (is_left_wall_present() || is_right_wall_present()){
                 ROS_INFO("SEE A WALL");
-                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present(), true);
+                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(NODE_WALL_SIDE_TRESHOLD), is_front_obstacle_present(), is_right_wall_present(NODE_WALL_SIDE_TRESHOLD), true);
                 if(merged_node) {
                     ROS_INFO("MERGED NODE");
                     return;
@@ -272,7 +274,7 @@ private:
             }
             else{
                 ROS_INFO("DONT SEE A WALL");
-                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present(), true);
+                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(NODE_WALL_SIDE_TRESHOLD), is_front_obstacle_present(), is_right_wall_present(NODE_WALL_SIDE_TRESHOLD), true);
                 if(merged_node) {
                     return;
                 }
@@ -284,7 +286,7 @@ private:
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
             ROS_INFO("OUT OF RANGE");
             //stop();
-            place_node(0,0,0.25,0,TOPO_NODE_FREE, is_left_wall_present(), false, is_right_wall_present(), false);
+            place_node(0,0,0.25,0,TOPO_NODE_FREE, is_left_wall_present(NODE_WALL_SIDE_TRESHOLD), false, is_right_wall_present(NODE_WALL_SIDE_TRESHOLD), false);
             ROS_INFO("PLACED A NODE");
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
             FollowingWall follow_side = get_wall_to_follow();
@@ -318,7 +320,7 @@ private:
                 //There is a wall to follow but we have an object to the front. So turn away from the wall.
                 ROS_INFO("Stopping is_front_obstacle_too_close()");
                 stop();
-                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(), is_front_obstacle_present(), is_right_wall_present(), true);
+                place_node(0,0,0,0,TOPO_NODE_FREE, is_left_wall_present(NODE_WALL_SIDE_TRESHOLD), is_front_obstacle_present(), is_right_wall_present(NODE_WALL_SIDE_TRESHOLD), true);
                 if(merged_node) {
                     return;
                 }
@@ -628,28 +630,31 @@ private:
         return value > treshold_near && value < treshold_far;
     }
 
-    bool is_front_inside_treshold(double value) {
+    bool is_front_inside_treshold(double value, double treshold = -1) {
         return is_inside_treshold(value, front_distance_treshold_near, front_distance_treshold_far);
     }
 
-    bool is_side_inside_treshold(double value) {
-        return is_inside_treshold(value, side_distance_treshold_near, side_distance_treshold_far);
+    bool is_side_inside_treshold(double value, double treshold = -1) {
+        if(treshold < 0) {
+            treshold = side_distance_treshold_far;
+        }
+        return is_inside_treshold(value, side_distance_treshold_near, treshold);
     }
 
-    bool is_side_wall_present(double back, double front) {
-        return is_side_inside_treshold(back) && is_side_inside_treshold(front);
+    bool is_side_wall_present(double back, double front, double treshold = -1) {
+        return is_side_inside_treshold(back, treshold) && is_side_inside_treshold(front, treshold);
     }
 
-    bool is_left_wall_present() {
-        return is_side_wall_present(left_back, left_front);
+    bool is_left_wall_present(double treshold = -1) {
+        return is_side_wall_present(left_back, left_front, treshold);
     }
 
-    bool is_right_wall_present() {
-        return is_side_wall_present(right_back, right_front);
+    bool is_right_wall_present(double treshold = -1) {
+        return is_side_wall_present(right_back, right_front, treshold);
     }
 
-    bool is_side_wall_over_threshold(double back, double front){
-    return is_side_wall_present(back*(1+threshold_tolerance), front*(1+threshold_tolerance));
+    bool is_side_wall_over_threshold(double back, double front, double treshold = -1){
+    return is_side_wall_present(back*(1+threshold_tolerance), front*(1+threshold_tolerance), treshold);
     }
 
 
