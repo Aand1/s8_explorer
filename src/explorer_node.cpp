@@ -278,6 +278,7 @@ private:
                 }
                 turn(RotateDirection(following_wall) * TURN_DEGREES_90);
             }
+             ROS_INFO("HELLUUU");
             follow_wall(following_wall);
         } else if(current_state == State::FOLLOWING_WALL_OUT_OF_RANGE) {
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
@@ -420,6 +421,11 @@ private:
     }
 
     void follow_wall(FollowingWall wall) {
+        if(!explore) {
+            ROS_INFO("Ingnoring wall following because we are no longer exploring");
+            return;
+        }
+
         following_wall = wall;
 
         if(following_wall == FollowingWall::NONE) {
@@ -462,6 +468,11 @@ private:
     }
 
     void turn(int degrees) {
+        if(!explore) {
+            ROS_INFO("Ingnoring turn because we are no longer exploring");
+            return;
+        }
+
         stop();
         ROS_INFO("Turning %s", to_string(RotateDirection(sign(degrees))).c_str());
         state_manager.set_state(StateManager::State::TURNING);
