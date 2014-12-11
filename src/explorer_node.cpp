@@ -160,9 +160,10 @@ class Explorer : public s8::Node {
     bool preempted;
     bool merged_node;
     bool just_started;
+    int is_front_wall_cnt;
 
 public:
-    Explorer() : merged_node(false), explore(false), preempted(false), first(false), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE), explore_action_server(nh, ACTION_EXPLORE, boost::bind(&Explorer::action_execute_explore_callback, this, _1), false) {
+    Explorer() : is_front_wall_cnt(0), merged_node(false), explore(false), preempted(false), first(false), actual_v(0.0), actual_w(0.0), should_stop_go_straight(false), turn_action(ACTION_TURN, true), stop_action(ACTION_STOP, true), follow_wall_action(ACTION_FOLLOW_WALL, true), state_manager(StateManager::State::STILL, std::bind(&Explorer::on_state_changed, this, std::placeholders::_1, std::placeholders::_2)), front_left(0.0), front_right(0.0), left_back(0.0), left_front(0.0), right_back(0.0), right_front(0.0), following_wall(FollowingWall::NONE), explore_action_server(nh, ACTION_EXPLORE, boost::bind(&Explorer::action_execute_explore_callback, this, _1), false) {
         init_params();
         print_params();
 
@@ -286,7 +287,7 @@ private:
             //Wall following out of range. This means that there is no more wall to follow on this partical side (but there might be on the other side).
             ROS_INFO("OUT OF RANGE");
             //stop();
-            place_node(0,0,0.25,0,TOPO_NODE_FREE, is_left_wall_present(NODE_WALL_SIDE_TRESHOLD), false, is_right_wall_present(NODE_WALL_SIDE_TRESHOLD), false);
+            place_node(0,0,0.3,0,TOPO_NODE_FREE, is_left_wall_present(NODE_WALL_SIDE_TRESHOLD), false, is_right_wall_present(NODE_WALL_SIDE_TRESHOLD), false);
             ROS_INFO("PLACED A NODE");
             //If there are no walls to close, the robot needs to explore (just go straight) until a wall pops up.
             FollowingWall follow_side = get_wall_to_follow();
@@ -418,8 +419,28 @@ private:
     }
 
     void wall_callback(const s8_msgs::isFrontWall::ConstPtr & wall){
+        ROS_INFO("Wall: %s", wall->isFrontWall ? "true" : "false");
+
+        if(is_turning()) {
+            ROS_INFO("Turning and wall callback");
+            is_front_wall_cnt = 0;
+            is_front_wall = false;
+            return;   
+        }
+
         front_wall_distance = wall->distToFrontWall;
-        is_front_wall       = wall->isFrontWall;
+
+        if(wall->isFrontWall) {
+            is_front_wall_cnt++;
+        } else {
+            is_front_wall_cnt = 0;
+        }
+
+        if(is_front_wall_cnt >= 2) {
+            is_front_wall = true;
+        } else {
+            is_front_wall = false;
+        }
     }
 
     void follow_wall(FollowingWall wall) {
