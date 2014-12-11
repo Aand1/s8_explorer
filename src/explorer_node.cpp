@@ -436,7 +436,7 @@ private:
             is_front_wall_cnt = 0;
         }
 
-        if(is_front_wall_cnt >= 2) {
+        if(is_front_wall_cnt >= 3) {
             is_front_wall = true;
         } else {
             is_front_wall = false;
